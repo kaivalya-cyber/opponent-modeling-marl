@@ -59,6 +59,9 @@ def run_sweep() -> None:
     config.LEARNING_RATE = hp.get("learning_rate", config.LEARNING_RATE)
     config.CLIP_EPSILON = hp.get("clip_epsilon", config.CLIP_EPSILON)
     config.ENTROPY_COEFF = hp.get("entropy_coeff", config.ENTROPY_COEFF)
+    config.GAMMA = hp.get("gamma", config.GAMMA)
+    config.GAE_LAMBDA = hp.get("gae_lambda", config.GAE_LAMBDA)
+    config.N_EPOCHS = hp.get("n_epochs", config.N_EPOCHS)
     config.OM_LOSS_WEIGHT = hp.get("om_loss_weight", config.OM_LOSS_WEIGHT)
     config.OM_HIDDEN_DIM = hp.get("om_hidden_dim", config.OM_HIDDEN_DIM)
     config.OM_NUM_LAYERS = hp.get("om_num_layers", config.OM_NUM_LAYERS)
@@ -71,11 +74,15 @@ def run_sweep() -> None:
     run_id = run.id
 
     logger.info(
-        "Sweep trial config: lr=%.6f clip=%.3f ent=%.4f omw=%.3f omdim=%d "
-        "omlayers=%d omdrop=%.2f vcoeff=%.3f gradclip=%.3f run_id=%s",
+        "Sweep trial config: lr=%.6f clip=%.3f ent=%.4f gamma=%.3f lambda=%.2f "
+        "nepochs=%d omw=%.3f omdim=%d omlayers=%d omdrop=%.2f vcoeff=%.3f "
+        "gradclip=%.3f run_id=%s",
         config.LEARNING_RATE,
         config.CLIP_EPSILON,
         config.ENTROPY_COEFF,
+        config.GAMMA,
+        config.GAE_LAMBDA,
+        config.N_EPOCHS,
         config.OM_LOSS_WEIGHT,
         config.OM_HIDDEN_DIM,
         config.OM_NUM_LAYERS,

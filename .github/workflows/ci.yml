@@ -49,3 +49,28 @@ jobs:
       - name: Run tests
         run: |
           python -m pytest tests/ -v --tb=short
+
+  test-gpu:
+    runs-on: [self-hosted, gpu]
+    if: false  # Disabled by default — set to true when a GPU runner is registered
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify CUDA availability
+        run: |
+          python -c "import torch; assert torch.cuda.is_available(), 'CUDA not available'; print(f'CUDA device: {torch.cuda.get_device_name(0)}')"
+
+      - name: Run tests on GPU
+        run: |
+          python -m pytest tests/ -v --tb=short -k "not test_mps"

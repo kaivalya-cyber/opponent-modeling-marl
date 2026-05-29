@@ -94,6 +94,21 @@ class TestTournamentLogic:
 class TestWandbIntegration:
     """Test that wandb integration doesn't crash and handles missing wandb."""
 
+    @pytest.fixture(autouse=True)
+    def _cleanup(self):
+        """Clean up results/test_* directories after each test in this class."""
+        yield
+        from pathlib import Path
+        import shutil
+        results_dir = Path(__file__).parent.parent / "results"
+        if results_dir.exists():
+            for subdir in results_dir.iterdir():
+                if subdir.is_dir() and subdir.name.startswith("test_"):
+                    try:
+                        shutil.rmtree(subdir)
+                    except (FileNotFoundError, PermissionError):
+                        pass
+
     def setup_method(self):
         """Ensure wandb is not imported from any previous test."""
         # Remove wandb from sys.modules if present
@@ -173,6 +188,21 @@ class TestWandbIntegration:
 
 class TestCurriculumLearning:
     """Test curriculum learning stage transitions and env recreation."""
+
+    @pytest.fixture(autouse=True)
+    def _cleanup(self):
+        """Clean up results/test_* directories after each test in this class."""
+        yield
+        from pathlib import Path
+        import shutil
+        results_dir = Path(__file__).parent.parent / "results"
+        if results_dir.exists():
+            for subdir in results_dir.iterdir():
+                if subdir.is_dir() and subdir.name.startswith("test_"):
+                    try:
+                        shutil.rmtree(subdir)
+                    except (FileNotFoundError, PermissionError):
+                        pass
 
     def test_get_curriculum_params_disabled(self):
         """When curriculum is disabled, always return default params."""
@@ -288,6 +318,21 @@ class TestCurriculumLearning:
 
 class TestPastSelfEval:
     """Test past-self snapshot saving and loading."""
+
+    @pytest.fixture(autouse=True)
+    def _cleanup(self):
+        """Clean up results/test_* directories after each test in this class."""
+        yield
+        from pathlib import Path
+        import shutil
+        results_dir = Path(__file__).parent.parent / "results"
+        if results_dir.exists():
+            for subdir in results_dir.iterdir():
+                if subdir.is_dir() and subdir.name.startswith("test_"):
+                    try:
+                        shutil.rmtree(subdir)
+                    except (FileNotFoundError, PermissionError):
+                        pass
 
     def test_save_and_load_snapshot_baseline(self):
         """Save a snapshot and verify it can be loaded."""

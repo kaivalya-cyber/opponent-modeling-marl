@@ -21,6 +21,16 @@ parameters:
     distribution: log_uniform_values
     min: 0.001
     max: 0.1
+  gamma:
+    distribution: uniform
+    min: 0.9
+    max: 0.999
+  gae_lambda:
+    distribution: uniform
+    min: 0.8
+    max: 0.99
+  n_epochs:
+    values: [2, 4, 8, 16]
   om_loss_weight:
     distribution: uniform
     min: 0.1
