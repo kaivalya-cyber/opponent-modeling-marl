@@ -1,0 +1,49 @@
+# Ignore everything that shouldn't go into the Docker build context
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Results (checkpoints, metrics, snapshots)
+results/baseline_ppo/checkpoint_*.pt
+results/om_agent/checkpoint_*.pt
+results/snapshots/
+results/tournament_results.txt
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Wandb
+wandb/
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
