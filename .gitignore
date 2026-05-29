@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+results/baseline_ppo/checkpoint_*.pt
+results/om_agent/checkpoint_*.pt
+results/snapshots/
+wandb/
+.DS_Store
+*.egg-info/
