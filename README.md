@@ -1,5 +1,11 @@
 # opponent-modeling-marl
 
+[![CI](https://github.com/kaivalya-cyber/opponent-modeling-marl/actions/workflows/ci.yml/badge.svg)](https://github.com/kaivalya-cyber/opponent-modeling-marl/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12-blue)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c)](https://pytorch.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/license/MIT)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io-blue)](https://github.com/kaivalya-cyber/opponent-modeling-marl/pkgs/container/opponent-modeling-marl)
+
 Multi-agent reinforcement learning with opponent modeling: PPO agents with GRU/Transformer opponent models, curriculum learning, past-self evaluation, and comprehensive analysis tools.
 
 ## Project Structure
@@ -41,6 +47,65 @@ opponent-modeling-marl/
 ├── .pre-commit-config.yaml  # Pre-commit hooks (ruff, pytest)
 ├── .github/workflows/ci.yml # CI/CD pipeline (tests + Docker build)
 └── requirements.txt         # Python dependencies
+```
+
+## Architecture
+
+```
+                         ┌────────────────────────────────────────────┐
+                         │               Trainer (Self-Play)           │
+                         │  ┌──────────────────────────────────────┐  │
+                         │  │         Predator-Prey Environment     │  │
+                         │  │         (2D toroidal grid, 10×10)     │  │
+                         │  └──────┬──────────────────┬────────────┘  │
+                         │         │                  │                │
+                         │    ┌────▼─────┐      ┌────▼─────┐         │
+                         │    │ Predator  │      │   Prey    │         │
+                         │    │  Agent    │      │   Agent   │         │
+                         │    └────┬─────┘      └────┬─────┘         │
+                         │         │                  │                │
+                         │    ┌────▼──────────────────▼─────┐         │
+                         │    │       Rollout Buffer          │         │
+                         │    │    (GAE advantage comp.)      │         │
+                         │    └─────────────┬────────────────┘         │
+                         │                  │                           │
+                         │    ┌─────────────▼────────────────┐         │
+                         │    │         PPO Update             │         │
+                         │    │  ┌──────────┐ ┌────────────┐  │         │
+                         │    │  │Policy Net│ │ Value Net  │  │         │
+                         │    │  └──────────┘ └────────────┘  │         │
+                         │    └───────────────────────────────┘         │
+                         │                                              │
+                         │    ┌───────────────────────────────┐         │
+                         │    │   Opponent Model (OM Agent)    │         │
+                         │    │  ┌────────────┐ ┌──────────┐  │         │
+                         │    │  │   GRU/     │  │ Opponent  │  │         │
+                         │    │  │ Transformer│  │  Action   │  │         │
+                         │    │  └────────────┘ │ Prediction │  │         │
+                         │    └─────────────────┴───────────┘  │         │
+                         │                                              │
+                         │  ┌────Eval────┐  ┌───────┐  ┌───────────┐   │
+                         │  │ vs Random  │  │ vs     │  │ Checkpoint│   │
+                         │  │ Opponent   │  │Past-Self│  │  Saving   │   │
+                         │  └────────────┘  └───────┘  └───────────┘   │
+                         └────────────────────────────────────────────┘
+
+                         ┌────────────────────────────────────────────┐
+                         │              Results Pipeline               │
+                         │                                            │
+                         │  ┌────────────┐ ┌──────────┐ ┌──────────┐ │
+                         │  │ metrics.csv │ │eval csv  │ │checkpoints│ │
+                         │  └─────┬──────┘ └────┬─────┘ └────┬─────┘ │
+                         │        │             │            │        │
+                         │        ▼             ▼            ▼        │
+                         │  ┌─────────────────────────────────────┐   │
+                         │  │          analysis.py                  │   │
+                         │  │  • comparison_plots.png (6-panel)     │   │
+                         │  │  • loss_curves.png                    │   │
+                         │  │  • head_to_head.png                   │   │
+                         │  │  • Statistical tests                   │   │
+                         │  └─────────────────────────────────────┘   │
+                         └────────────────────────────────────────────┘
 ```
 
 ## Quick Start
@@ -118,11 +183,25 @@ git commit --no-verify -m "..."
 
 ## Experiment Configurations
 
-| Experiment | Description | Command |
-|---|---|---|
-| `baseline_ppo` | Standard PPO self-play | `python -m experiments.run_baseline` |
-| `om_agent` | PPO + GRU opponent model | `python -m experiments.run_om` |
-| `om_curriculum` | PPO + OM + progressive grid sizes | `python -m experiments.run_all` |
+| Experiment | Description | Opponent Model | Curriculum | Command |
+|---|---|---|---|---|
+| `baseline_ppo` | Standard PPO self-play | ✗ | ✗ | `python -m experiments.run_baseline` |
+| `om_agent` | PPO + GRU opponent model | ✓ | ✗ | `python -m experiments.run_om` |
+| `om_curriculum` | PPO + OM + progressive grid sizes | ✓ | ✓ | `python -m experiments.run_all` |
+
+### Run-All Pipeline Flags
+
+```bash
+python -m experiments.run_all [--quick] [--episodes N] [--no-wandb]
+```
+
+| Flag | Description |
+|---|---|
+| `--quick` | Smoke test: 5 episodes/experiment (may skip PPO updates) |
+| `--episodes N` | Override episode count (e.g., `--episodes 500`) |
+| `--no-wandb` | Disable Weights & Biases logging |
+
+`TOTAL_EPISODES` env var is also supported for backward compatibility.
 
 ## Key Features
 
@@ -141,23 +220,47 @@ The opponent model receives gradients from both its cross-entropy prediction los
 ### Experiment Tracking
 Each run saves `run_metadata.json` containing the git commit hash, full config snapshot, hardware info, and model parameter counts for full reproducibility.
 
-## Results Interpretation
+## Results & Visualizations
 
 Training metrics are logged to `results/<experiment>/metrics.csv` and evaluation metrics to `eval_metrics.csv`.
 
-| Metric | Meaning |
-|---|---|
-| `capture_rate` | Rolling average (20 episodes) of predator captures |
-| `predator_elo` / `prey_elo` | Elo ratings from self-play outcomes |
-| `policy_loss` / `value_loss` | PPO clip loss and value function MSE |
-| `om_loss` | Cross-entropy loss for opponent action prediction |
-| `win_rate_vs_random` | Deterministic evaluation against random opponent |
-| `win_rate_vs_past_self` | Evaluation against frozen historical snapshot |
+### Metrics Reference
 
-Run `python results/analysis.py` after training to generate publication-quality visualizations:
-- `comparison_plots.png` — 6-panel comparison across experiments
-- `loss_curves.png` — Policy, value, and entropy loss curves
-- `head_to_head.png` — Tournament matchup bar chart
+| Metric | File | Meaning |
+|---|---|---|
+| `capture_rate` | `metrics.csv` | Rolling average (20 episodes) of predator captures |
+| `predator_elo` / `prey_elo` | `metrics.csv` | Elo ratings from self-play outcomes |
+| `policy_loss` / `value_loss` | `metrics.csv` | PPO clip loss and value function MSE |
+| `om_loss` | `metrics.csv` | Cross-entropy loss for opponent action prediction (OM only) |
+| `win_rate_vs_random` | `eval_metrics.csv` | Deterministic evaluation against random opponent |
+| `win_rate_vs_past_self` | `eval_metrics.csv` | Evaluation against frozen historical snapshot |
+
+### Generating Visualizations
+
+After running experiments, generate publication-quality plots:
+
+```bash
+python results/analysis.py
+```
+
+This produces three visualizations:
+
+| Output | Description |
+|---|---|
+| `results/comparison_plots.png` | **6-panel overview**: capture rate, Elo ratings, OM loss, win rate vs random, past-self eval, OM weight decay |
+| `results/loss_curves.png` | **Loss analysis**: policy loss, value loss, and entropy across experiments |
+| `results/head_to_head.png` | **Bar chart**: final capture rate and Elo comparison (includes curriculum when available) |
+
+### Pipeline Visualizations
+
+`experiments/run_all.py` also generates:
+
+| Output | Description |
+|---|---|
+| `results/comparison_report.txt` | Human-readable summary with metric table and insights |
+| `results/comparison_plots.png` | 4-panel training curves (capture rate, Elo, win rate, past-self) |
+
+All plots use 150 DPI, publication-friendly styling, and consistent color schemes across experiments (blue=baseline, red=OM, green=curriculum).
 
 ## Hyperparameter Sweeps
 
@@ -178,9 +281,9 @@ python -m experiments.sweep
 
 On every push and PR, GitHub Actions:
 - Runs all 38 tests across Python 3.10–3.12
-- Lints with flake8 and ruff
+- Lints with ruff
 - Builds and pushes Docker images to GitHub Container Registry on version tags (`v*`)
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE) for details.

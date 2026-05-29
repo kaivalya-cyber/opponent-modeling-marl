@@ -1,12 +1,14 @@
 """
-Results analysis — loads metrics from experiments and generates comprehensive plots.
+Results analysis — loads metrics from all three experiments and generates
+comprehensive comparison plots.
 
 Usage: python results/analysis.py
 
 Generates:
-  - comparison_plots.png: capture rate, Elo, OM loss, eval metrics
-  - loss_curves.png: policy loss, value loss, entropy over training
-  - head_to_head_summary.png: side-by-side bar chart comparison
+  - comparison_plots.png: 6-panel plot (capture rate, Elo, OM loss, eval,
+    past-self, OM weight decay)
+  - loss_curves.png: policy loss, value loss, entropy across experiments
+  - head_to_head.png: side-by-side bar chart (baseline vs OM vs curriculum)
 """
 
 from __future__ import annotations
@@ -36,8 +38,10 @@ RESULTS_DIR = Path("results")
 COLORS = {
     "baseline": "#4a90d9",
     "om": "#e74c3c",
+    "curriculum": "#2ecc71",
     "baseline_light": "#7ab4f0",
     "om_light": "#f08080",
+    "curriculum_light": "#58d68d",
 }
 
 
@@ -63,7 +67,10 @@ def smooth(values: np.ndarray, window: int = 20) -> np.ndarray:
     return np.convolve(values, kernel, mode="valid")
 
 
-def plot_capture_rate(ax, baseline: pd.DataFrame, om: pd.DataFrame) -> None:
+def plot_capture_rate(
+    ax, baseline: pd.DataFrame, om: pd.DataFrame,
+    curriculum: pd.DataFrame | None = None,
+) -> None:
     """Capture rate over episodes."""
     ax.plot(
         smooth(baseline["capture_rate"].values),
@@ -79,6 +86,15 @@ def plot_capture_rate(ax, baseline: pd.DataFrame, om: pd.DataFrame) -> None:
         color=COLORS["om"],
         linewidth=2,
     )
+    if curriculum is not None and len(curriculum) > 0:
+        ax.plot(
+            smooth(curriculum["capture_rate"].values),
+            label="OM + Curriculum",
+            alpha=0.85,
+            color=COLORS["curriculum"],
+            linewidth=2,
+            linestyle="--",
+        )
     ax.set_xlabel("Episode")
     ax.set_ylabel("Capture Rate (rolling 20)")
     ax.set_title("Predator Capture Rate Over Training", fontweight="bold")
@@ -86,7 +102,10 @@ def plot_capture_rate(ax, baseline: pd.DataFrame, om: pd.DataFrame) -> None:
     ax.set_ylim(0, 1.05)
 
 
-def plot_elo(ax, baseline: pd.DataFrame, om: pd.DataFrame) -> None:
+def plot_elo(
+    ax, baseline: pd.DataFrame, om: pd.DataFrame,
+    curriculum: pd.DataFrame | None = None,
+) -> None:
     """Elo ratings over episodes."""
     ax.plot(
         baseline["predator_elo"].values,
@@ -102,6 +121,15 @@ def plot_elo(ax, baseline: pd.DataFrame, om: pd.DataFrame) -> None:
         color=COLORS["om"],
         linewidth=2,
     )
+    if curriculum is not None and len(curriculum) > 0:
+        ax.plot(
+            curriculum["predator_elo"].values,
+            label="Curriculum Predator",
+            alpha=0.85,
+            color=COLORS["curriculum"],
+            linewidth=2,
+            linestyle="--",
+        )
     ax.plot(
         baseline["prey_elo"].values,
         label="Baseline Prey",
@@ -292,38 +320,79 @@ def plot_om_weight_decay(ax, om: pd.DataFrame) -> None:
         ax.set_title("OM Loss Weight Decay", fontweight="bold")
 
 
-def plot_head_to_head(ax, baseline: pd.DataFrame, om: pd.DataFrame) -> None:
-    """Bar chart comparing final metrics."""
-    last_n = 100
+def plot_head_to_head(
+    ax, baseline: pd.DataFrame, om: pd.DataFrame,
+    curriculum: pd.DataFrame | None = None,
+) -> None:
+    """Bar chart comparing final metrics across all experiments."""
+    last_n = min(100, len(baseline))
     bl_cap = baseline["capture_rate"].iloc[-last_n:].mean() * 100
     om_cap = om["capture_rate"].iloc[-last_n:].mean() * 100
     bl_elo = baseline["predator_elo"].iloc[-1]
     om_elo = om["predator_elo"].iloc[-1]
 
-    metrics_names = ["Capture Rate %\n(last 100 ep)", "Final Elo\n(predator)"]
-    bl_vals = [bl_cap, bl_elo]
-    om_vals = [om_cap, om_elo]
+    labels_list = ["Baseline PPO", "OM Agent"]
+    colors_list = [COLORS["baseline"], COLORS["om"]]
+    cap_vals = [bl_cap, om_cap]
+    elo_vals = [bl_elo, om_elo]
 
-    x = np.arange(len(metrics_names))
-    width = 0.35
+    if curriculum is not None and len(curriculum) > 0:
+        cur_cap = curriculum["capture_rate"].iloc[-last_n:].mean() * 100
+        cur_elo = curriculum["predator_elo"].iloc[-1]
+        labels_list.append("OM + Curriculum")
+        colors_list.append(COLORS["curriculum"])
+        cap_vals.append(cur_cap)
+        elo_vals.append(cur_elo)
 
-    bars1 = ax.bar(x - width / 2, bl_vals, width, label="Baseline PPO",
-                    color=COLORS["baseline"], edgecolor="white", linewidth=0.8)
-    bars2 = ax.bar(x + width / 2, om_vals, width, label="OM Agent",
-                    color=COLORS["om"], edgecolor="white", linewidth=0.8)
+    x = np.arange(2)  # Two metric groups
+    n_bars = len(labels_list)
+    width = 0.8 / n_bars
 
-    for bar in bars1:
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
-                f"{bar.get_height():.1f}", ha="center", va="bottom", fontsize=10, fontweight="bold")
-    for bar in bars2:
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
-                f"{bar.get_height():.1f}", ha="center", va="bottom", fontsize=10, fontweight="bold")
+    for i, (label, color) in enumerate(zip(labels_list, colors_list)):
+        offset = (i - (n_bars - 1) / 2) * width
+        bars_cap = ax.bar(
+            x[0] + offset, cap_vals[i], width,
+            label=label, color=color, edgecolor="white", linewidth=0.8,
+        )
+        bars_elo = ax.bar(
+            x[1] + offset, elo_vals[i], width,
+            color=color, edgecolor="white", linewidth=0.8,
+        )
+        for bar in bars_cap:
+            ax.text(
+                bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
+                f"{bar.get_height():.1f}", ha="center", va="bottom",
+                fontsize=9, fontweight="bold",
+            )
+        for bar in bars_elo:
+            ax.text(
+                bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
+                f"{bar.get_height():.1f}", ha="center", va="bottom",
+                fontsize=9, fontweight="bold",
+            )
 
     ax.set_xticks(x)
-    ax.set_xticklabels(metrics_names)
+    ax.set_xticklabels(["Capture Rate %\n(last 100 ep)", "Final Elo\n(predator)"])
     ax.set_title("Head-to-Head: Final Performance", fontweight="bold")
-    ax.legend(frameon=True, facecolor="white", edgecolor="#dee2e6")
+    ax.legend(frameon=True, facecolor="white", edgecolor="#dee2e6", fontsize=9)
     ax.set_ylim(bottom=0)
+
+
+def _make_summary_row(
+    metric: str, bl_val, om_val, cur_val=None, fmt_spec: str = ".2f",
+) -> str:
+    """Format a single row of the summary table."""
+    def fmt(v):
+        if v is None:
+            return "—".rjust(14)
+        if isinstance(v, (int, float)):
+            return f"{v:{fmt_spec}}".rjust(14)
+        return str(v).rjust(14)
+
+    cols = f"{metric:<26s} | {fmt(bl_val)} | {fmt(om_val)}"
+    if cur_val is not None:
+        cols += f" | {fmt(cur_val)}"
+    return cols
 
 
 def main() -> None:
@@ -333,10 +402,19 @@ def main() -> None:
     bl_eval = load_eval_metrics("baseline_ppo")
     om_eval = load_eval_metrics("om_agent")
 
+    # Try loading curriculum data (may not exist)
+    curriculum = None
+    cur_eval = None
+    try:
+        curriculum = load_metrics("om_curriculum")
+        cur_eval = load_eval_metrics("om_curriculum")
+    except FileNotFoundError:
+        print("(Curriculum data not found — skipping in plots)")
+
     # ---- Figure 1: Main comparison (capture rate, Elo, eval metrics) ----
     fig, axes = plt.subplots(2, 3, figsize=(20, 11))
-    plot_capture_rate(axes[0, 0], baseline, om)
-    plot_elo(axes[0, 1], baseline, om)
+    plot_capture_rate(axes[0, 0], baseline, om, curriculum)
+    plot_elo(axes[0, 1], baseline, om, curriculum)
     plot_om_loss(axes[0, 2], om)
     plot_eval_metrics(axes[1, 0], bl_eval, om_eval)
     plot_past_self_eval(axes[1, 1], bl_eval, om_eval)
@@ -359,7 +437,7 @@ def main() -> None:
 
     # ---- Figure 3: Head-to-head summary ----
     fig, ax = plt.subplots(figsize=(8, 5))
-    plot_head_to_head(ax, baseline, om)
+    plot_head_to_head(ax, baseline, om, curriculum)
     plt.tight_layout(pad=2)
     plot_path = RESULTS_DIR / "head_to_head.png"
     plt.savefig(plot_path, dpi=150, bbox_inches="tight")
@@ -367,7 +445,7 @@ def main() -> None:
     plt.close()
 
     # ---- Summary Table ----
-    last_n = 100
+    last_n = min(100, len(baseline))
     bl_last = baseline["capture_rate"].iloc[-last_n:].values
     om_last = om["capture_rate"].iloc[-last_n:].values
 
@@ -376,6 +454,13 @@ def main() -> None:
 
     bl_cap_rate = bl_last.mean() * 100
     om_cap_rate = om_last.mean() * 100
+
+    cur_cap_rate = None
+    cur_elo_pred = None
+    if curriculum is not None and len(curriculum) > 0:
+        cur_last_n = min(100, len(curriculum))
+        cur_cap_rate = curriculum["capture_rate"].iloc[-cur_last_n:].mean() * 100
+        cur_elo_pred = curriculum["predator_elo"].iloc[-1]
 
     def episodes_to_threshold(df: pd.DataFrame, threshold: float = 0.60) -> str:
         rates = df["capture_rate"].values
@@ -387,26 +472,54 @@ def main() -> None:
     bl_to_60 = episodes_to_threshold(baseline)
     om_to_60 = episodes_to_threshold(om)
 
+    has_curriculum = curriculum is not None and len(curriculum) > 0
+    header_cols = f"{'Metric':<26s} | {'Baseline PPO':>14s} | {'OM Agent':>14s}"
+    sep_line = "-" * len(header_cols)
+    if has_curriculum:
+        header_cols += " | {'OM+Curriculum':>14s}"
+        sep_line = "-" * len(header_cols)
+
     print()
-    print("=" * 60)
-    print(f"{'Metric':<24s} | {'Baseline PPO':>14s} | {'OM Agent':>14s}")
-    print("-" * 60)
-    print(f"{'Final Elo (predator)':<24s} | {bl_elo_pred:>14.1f} | {om_elo_pred:>14.1f}")
-    print(f"{'Capture rate (last 100)':<24s} | {bl_cap_rate:>13.1f}% | {om_cap_rate:>13.1f}%")
-    print(f"{'Episodes to 60% cap.':<24s} | {bl_to_60:>14s} | {om_to_60:>14s}")
+    print("=" * len(header_cols))
+    print(header_cols)
+    print(sep_line)
+
+    rows = [
+        ("Final Elo (predator)", bl_elo_pred, om_elo_pred, cur_elo_pred, ".1f"),
+        ("Capture rate (last 100)", f"{bl_cap_rate:.1f}%", f"{om_cap_rate:.1f}%",
+         f"{cur_cap_rate:.1f}%" if cur_cap_rate else None, "s"),
+        ("Episodes to 60% cap.", bl_to_60, om_to_60, None, "s"),
+    ]
+
+    for metric, bl_v, om_v, cur_v, fmt_s in rows:
+        print(_make_summary_row(metric, bl_v, om_v, cur_v, fmt_s))
 
     # OM loss
     if "om_loss" in om.columns:
         om_final_loss = om["om_loss"].dropna().iloc[-1] if len(om["om_loss"].dropna()) > 0 else float("nan")
-        print(f"{'Final OM loss':<24s} | {'—':>14s} | {om_final_loss:>14.4f}")
+        cur_final_loss = None
+        if curriculum is not None and "om_loss" in curriculum.columns:
+            cur_vals = curriculum["om_loss"].dropna()
+            if len(cur_vals) > 0:
+                cur_final_loss = cur_vals.iloc[-1]
+        print(_make_summary_row(
+            "Final OM loss", "—", om_final_loss, cur_final_loss, ".4f",
+        ))
 
     # Past-self eval
     if om_eval is not None and "win_rate_vs_past_self" in om_eval.columns:
         past_vals = om_eval["win_rate_vs_past_self"].dropna()
-        if len(past_vals) > 0:
-            print(f"{'Past-self win rate (last)':<24s} | {'—':>14s} | {past_vals.iloc[-1]:>13.2f}")
+        cur_past = None
+        if cur_eval is not None and "win_rate_vs_past_self" in cur_eval.columns:
+            cur_past_vals = cur_eval["win_rate_vs_past_self"].dropna()
+            if len(cur_past_vals) > 0:
+                cur_past = cur_past_vals.iloc[-1]
+        om_past_val = past_vals.iloc[-1] if len(past_vals) > 0 else None
+        print(_make_summary_row(
+            "Past-self win rate", "—", om_past_val, cur_past, ".2f",
+        ))
 
-    print("=" * 60)
+    print("=" * len(header_cols))
 
     # ---- Statistical Test ----
     stat, p_value = mannwhitneyu(om_last, bl_last, alternative="greater")
