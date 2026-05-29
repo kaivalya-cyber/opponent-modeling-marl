@@ -10,64 +10,60 @@
 #
 # GPU: docker compose run --rm --gpus all <service>
 
-services:
-  base:
-    build: .
-    image: opponent-modeling-marl:latest
-    environment:
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - ./results:/workspace/results
-      - ./wandb:/workspace/wandb
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+x-base: &base
+  build: .
+  image: opponent-modeling-marl:latest
+  environment:
+    - PYTHONUNBUFFERED=1
+  volumes:
+    - ./results:/workspace/results
+    - ./wandb:/workspace/wandb
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
 
+services:
   test:
-    extends:
-      service: base
+    <<: *base
     command: python -m pytest tests/ -v
 
   baseline:
-    extends:
-      service: base
+    <<: *base
     command: python experiments/run_baseline.py
 
   om-agent:
-    extends:
-      service: base
+    <<: *base
     command: python experiments/run_om.py
 
+  run-all:
+    <<: *base
+    command: python -m experiments.run_all
+
   tournament:
-    extends:
-      service: base
+    <<: *base
     command: python -m experiments.tournament
 
   sweep:
-    extends:
-      service: base
+    <<: *base
     command: python -m experiments.sweep
 
   analysis:
-    extends:
-      service: base
+    <<: *base
     command: python results/analysis.py
 
   lint:
-    extends:
-      service: base
+    <<: *base
     command: >
       sh -c "flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics &&
              flake8 . --count --exit-zero --max-complexity=10 --max-line-length=100 --statistics &&
              ruff check . --select=E,F,W --ignore=E501 --statistics"
 
   shell:
-    extends:
-      service: base
+    <<: *base
     command: /bin/bash
     stdin_open: true
     tty: true
