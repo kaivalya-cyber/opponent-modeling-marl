@@ -8,7 +8,12 @@ Experiments:
   3. om_curriculum      — PPO + opponent model + curriculum learning (5→7→10)
 
 Usage:
-    python -m experiments.run_all
+    python -m experiments.run_all [--quick] [--episodes N] [--no-wandb]
+
+Options:
+    --quick        Short smoke test with 5 episodes per experiment
+    --episodes N   Override total episodes for each experiment
+    --no-wandb     Disable wandb logging even when available and authenticated
 
 Outputs:
   - results/baseline_ppo/    (metrics, checkpoints, metadata)
@@ -20,6 +25,7 @@ Outputs:
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import time
@@ -416,11 +422,15 @@ def _log_comparison_to_wandb(
         wandb.finish()
 
 
-def _get_episode_override() -> int | None:
-    """Check environment for episode count override.
+def _get_episode_override(args: argparse.Namespace) -> int | None:
+    """Resolve episode count override from CLI args then env var.
 
-    Supports TOTAL_EPISODES env var for quick smoke-test runs.
+    Priority: --episodes > --quick > TOTAL_EPISODES env var > config default.
     """
+    if args.episodes is not None:
+        return args.episodes
+    if args.quick:
+        return 5
     val = os.environ.get("TOTAL_EPISODES")
     if val is not None:
         try:
@@ -449,14 +459,37 @@ def _can_use_wandb() -> bool:
         return False
 
 
+def _parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for the experiment pipeline."""
+    parser = argparse.ArgumentParser(
+        description="Run all three experiment configurations and compare results.",
+    )
+    parser.add_argument(
+        "--quick", action="store_true",
+        help="Run a quick smoke test (5 episodes per experiment; note: may "
+             "not trigger PPO updates due to ROLLOUT_STEPS requirement).",
+    )
+    parser.add_argument(
+        "--episodes", type=int, default=None, metavar="N",
+        help="Override total episodes for each experiment.",
+    )
+    parser.add_argument(
+        "--no-wandb", action="store_true",
+        help="Disable wandb logging even when available and authenticated.",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
-    # Support env var override for quick pipeline tests
-    total_episodes = _get_episode_override()
+    args = _parse_args()
+
+    # Resolve episode count from CLI args / env var / config default
+    total_episodes = _get_episode_override(args)
     if total_episodes is not None:
         logger.info(
             "TOTAL_EPISODES=%d (overriding config default %d)",
@@ -464,8 +497,9 @@ def main() -> None:
         )
 
     # Enable wandb for the pipeline whenever it's available AND authenticated.
+    # --no-wandb flag explicitly disables it.
     # Save/restore config so individual experiment scripts keep their default.
-    use_wandb = _can_use_wandb()
+    use_wandb = _can_use_wandb() and not args.no_wandb
     _original_use_wandb = config.USE_WANDB
     if use_wandb:
         config.USE_WANDB = True

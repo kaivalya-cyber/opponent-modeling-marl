@@ -1,9 +1,9 @@
 {
   "experiment_name": "baseline_ppo",
   "is_om": false,
-  "git_commit": "e257f59f83c9940fa7cc1b49c0684296b8eef3c9",
+  "git_commit": "0576a36c95d82ff98ac1b595633dea53d0921a71",
   "git_branch": "main",
-  "timestamp": "2026-05-29T18:29:01.499865+00:00",
+  "timestamp": "2026-05-29T18:40:14.282350+00:00",
   "config": {
     "ACTION_DIM": 5,
     "CHECKPOINT_INTERVAL": 500,
