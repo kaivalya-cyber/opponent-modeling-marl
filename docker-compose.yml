@@ -1,0 +1,69 @@
+# Docker Compose for opponent-modeling MARL
+#
+# Usage:
+#   docker compose build                          # Build the image
+#   docker compose run --rm baseline              # Run baseline PPO experiment
+#   docker compose run --rm om-agent              # Run OM agent experiment
+#   docker compose run --rm tournament            # Run head-to-head tournament
+#   docker compose run --rm sweep                 # Run hyperparameter sweep
+#   docker compose run --rm test                  # Run test suite
+#
+# GPU: docker compose run --rm --gpus all <service>
+
+x-base: &base
+  build: .
+  image: opponent-modeling-marl:latest
+  environment:
+    - PYTHONUNBUFFERED=1
+  volumes:
+    - ./results:/workspace/results
+    - ./wandb:/workspace/wandb
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+
+services:
+  test:
+    <<: *base
+    command: python -m pytest tests/ -v
+
+  baseline:
+    <<: *base
+    command: python experiments/run_baseline.py
+
+  om-agent:
+    <<: *base
+    command: python experiments/run_om.py
+
+  run-all:
+    <<: *base
+    command: python -m experiments.run_all
+
+  tournament:
+    <<: *base
+    command: python -m experiments.tournament
+
+  sweep:
+    <<: *base
+    command: python -m experiments.sweep
+
+  analysis:
+    <<: *base
+    command: python results/analysis.py
+
+  lint:
+    <<: *base
+    command: >
+      sh -c "flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics &&
+             flake8 . --count --exit-zero --max-complexity=10 --max-line-length=100 --statistics &&
+             ruff check . --select=E,F,W --ignore=E501 --statistics"
+
+  shell:
+    <<: *base
+    command: /bin/bash
+    stdin_open: true
+    tty: true

@@ -14,7 +14,11 @@ from __future__ import annotations
 
 import copy
 import csv
+import json
 import logging
+import platform
+import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from collections import deque
 
@@ -99,6 +103,9 @@ class Trainer:
 
         # Tracking
         self.recent_captures = deque(maxlen=20)
+
+        # Save run metadata for reproducibility
+        self._save_run_metadata()
 
     def _init_csv(self) -> None:
         fieldnames = [
@@ -414,6 +421,86 @@ class Trainer:
             wandb.finish()
 
         logger.info("Training complete.")
+
+    # ------------------------------------------------------------------
+    # Run Metadata
+    # ------------------------------------------------------------------
+    def _save_run_metadata(self) -> None:
+        """Save git hash, config snapshot, and hardware info for reproducibility.
+
+        Creates a run_metadata.json file in the results directory containing:
+        - Git commit hash and branch
+        - Full config values (except device-specific settings)
+        - Hardware info (hostname, OS, Python version, PyTorch version, device)
+        - Training start timestamp
+        - Experiment name and type (baseline vs OM)
+        """
+        # Git info
+        git_hash = "unknown"
+        git_branch = "unknown"
+        try:
+            git_hash = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], text=True,
+            ).strip()
+            git_branch = subprocess.check_output(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"], text=True,
+            ).strip()
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+
+        # Config snapshot — capture all uppercase config variables
+        config_snapshot = {}
+        for key in dir(config):
+            if key.isupper() and not key.startswith("_"):
+                value = getattr(config, key)
+                # Make serializable
+                if isinstance(value, (str, int, float, bool, type(None))):
+                    config_snapshot[key] = value
+                elif isinstance(value, (list, tuple)):
+                    config_snapshot[key] = list(value)
+                else:
+                    config_snapshot[key] = str(value)
+
+        # Hardware info
+        hardware_info = {
+            "hostname": platform.node(),
+            "os": platform.platform(),
+            "python_version": platform.python_version(),
+            "torch_version": torch.__version__,
+            "device": str(config.DEVICE),
+            "cuda_available": torch.cuda.is_available(),
+            "mps_available": torch.backends.mps.is_available() if hasattr(torch.backends, "mps") else False,
+            "cpu_count": torch.get_num_threads() if hasattr(torch, "get_num_threads") else None,
+        }
+        if torch.cuda.is_available():
+            hardware_info["cuda_device"] = torch.cuda.get_device_name(0)
+            hardware_info["cuda_device_count"] = torch.cuda.device_count()
+
+        # Model parameter counts
+        model_info = {
+            "predator_policy_params": sum(p.numel() for p in self.predator.policy.parameters()),
+            "predator_value_params": sum(p.numel() for p in self.predator.value_net.parameters()),
+        }
+        if self.is_om:
+            model_info["opponent_model_params"] = sum(
+                p.numel() for p in self.predator.opponent_model.parameters()
+            )
+
+        metadata = {
+            "experiment_name": self.experiment_name,
+            "is_om": self.is_om,
+            "git_commit": git_hash,
+            "git_branch": git_branch,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "config": config_snapshot,
+            "hardware": hardware_info,
+            "model_info": model_info,
+        }
+
+        path = self.results_dir / "run_metadata.json"
+        with open(path, "w") as f:
+            json.dump(metadata, f, indent=2, default=str)
+        logger.info(f"Run metadata saved: {path}")
 
     # ------------------------------------------------------------------
     # Evaluation

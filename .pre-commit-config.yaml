@@ -1,0 +1,41 @@
+# Pre-commit hooks — install with: pre-commit install
+#
+# These run automatically before each commit to catch issues early.
+#   pre-commit run --all-files    # Run on all files manually
+#   git commit --no-verify        # Skip hooks for a single commit
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        args: [--fix, --select=E,F,W, --ignore=E501]
+        files: \.py$
+      - id: ruff-format
+        files: \.py$
+
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: python -m pytest tests/ -v --tb=short
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [python]
