@@ -21,6 +21,7 @@ Outputs:
 from __future__ import annotations
 
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -34,6 +35,13 @@ import config
 from agents.ppo_agent import PPOAgent
 from agents.om_agent import OMAgent
 from training.trainer import Trainer
+
+# Optional wandb import
+try:
+    import wandb
+    WANDB_AVAILABLE = True
+except ImportError:
+    WANDB_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -68,17 +76,23 @@ EXPERIMENTS = [
 # Runner
 # ---------------------------------------------------------------------------
 
-def run_experiment(exp: dict) -> dict:
-    """Run a single experiment and return summary stats."""
+def run_experiment(exp: dict, total_episodes: int | None = None) -> dict:
+    """Run a single experiment and return summary stats.
+
+    Args:
+        exp: Experiment dict with name, description, is_om, curriculum keys.
+        total_episodes: Override config.TOTAL_EPISODES (for quick test runs).
+    """
     name = exp["name"]
     is_om = exp["is_om"]
+    episodes = total_episodes if total_episodes is not None else config.TOTAL_EPISODES
 
     # Set curriculum config
     config.CURRICULUM_ENABLED = exp["curriculum"]
 
     logger.info("=" * 60)
     logger.info(f"Starting: {name} ({exp['description']})")
-    logger.info(f"  is_om={is_om}, curriculum={exp['curriculum']}")
+    logger.info(f"  is_om={is_om}, curriculum={exp['curriculum']}, episodes={episodes}")
     logger.info("=" * 60)
 
     config.set_seed(42)
@@ -96,7 +110,7 @@ def run_experiment(exp: dict) -> dict:
         predator=predator,
         prey=prey,
         experiment_name=name,
-        total_episodes=config.TOTAL_EPISODES,
+        total_episodes=episodes,
         is_om=is_om,
     )
     trainer.train()
@@ -161,55 +175,61 @@ def generate_comparison_report(summaries: list[dict]) -> str:
     lines.append(f"Experiments run: {len(summaries)}")
     lines.append("")
 
+    # Helper: format value or return dash if missing/non-numeric
+    def fmt_val(v, fmt_spec: str) -> str:
+        if isinstance(v, (int, float)):
+            return format(v, fmt_spec)
+        return "-"
+
     # Summary table
     headers = ["Metric", *(s["name"] for s in summaries)]
     rows = [
-        ("Total time", *(f"{s.get('elapsed_seconds', 'N/A'):.0f}s" for s in summaries)),
+        ("Total time", *(fmt_val(s.get("elapsed_seconds"), ".0f") + "s" if isinstance(s.get("elapsed_seconds"), (int, float)) else "-" for s in summaries)),
         (
             "Final capture rate",
-            *(f"{s.get('final_capture_rate', 'N/A'):.4f}" for s in summaries),
+            *(fmt_val(s.get("final_capture_rate"), ".4f") for s in summaries),
         ),
         (
             "Peak capture rate",
-            *(f"{s.get('peak_capture_rate', 'N/A'):.4f}" for s in summaries),
+            *(fmt_val(s.get("peak_capture_rate"), ".4f") for s in summaries),
         ),
         (
             "Final pred Elo",
-            *(f"{s.get('final_predator_elo', 'N/A'):.1f}" for s in summaries),
+            *(fmt_val(s.get("final_predator_elo"), ".1f") for s in summaries),
         ),
         (
             "Final prey Elo",
-            *(f"{s.get('final_prey_elo', 'N/A'):.1f}" for s in summaries),
+            *(fmt_val(s.get("final_prey_elo"), ".1f") for s in summaries),
         ),
         (
             "Final win rate",
-            *(f"{s.get('final_win_rate', 'N/A'):.4f}" for s in summaries),
+            *(fmt_val(s.get("final_win_rate"), ".4f") for s in summaries),
         ),
         (
             "Peak win rate",
-            *(f"{s.get('peak_win_rate', 'N/A'):.4f}" for s in summaries),
+            *(fmt_val(s.get("peak_win_rate"), ".4f") for s in summaries),
         ),
         (
             "Final pol loss",
-            *(f"{s.get('final_policy_loss', 'N/A'):.6f}" for s in summaries),
+            *(fmt_val(s.get("final_policy_loss"), ".6f") for s in summaries),
         ),
         (
             "Final val loss",
-            *(f"{s.get('final_value_loss', 'N/A'):.6f}" for s in summaries),
+            *(fmt_val(s.get("final_value_loss"), ".6f") for s in summaries),
         ),
     ]
 
     if any("final_om_loss" in s for s in summaries):
         rows.append((
             "Final OM loss",
-            *(f"{s.get('final_om_loss', 'N/A'):.6f}" if "final_om_loss" in s else "-"
+            *(fmt_val(s.get("final_om_loss"), ".6f") if "final_om_loss" in s else "-"
               for s in summaries),
         ))
 
     if any("final_past_self" in s for s in summaries):
         rows.append((
             "Final past-self",
-            *(f"{s.get('final_past_self', 'N/A'):.4f}" if "final_past_self" in s else "-"
+            *(fmt_val(s.get("final_past_self"), ".4f") if "final_past_self" in s else "-"
               for s in summaries),
         ))
 
@@ -327,19 +347,139 @@ def generate_comparison_plots(summaries: list[dict]) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
+def _log_comparison_to_wandb(
+    summaries: list[dict], report: str, plot_path: Path, total_episodes: int
+) -> None:
+    """Log comparison results to a standalone wandb run.
+
+    Each experiment's Trainer manages its own wandb lifecycle independently.
+    This function starts a fresh, isolated run solely for the cross-experiment
+    comparison summary — no nesting, no conflicts.
+    """
+    if not WANDB_AVAILABLE:
+        return
+
+    try:
+        wandb.init(
+            project=config.WANDB_PROJECT,
+            name="run_all_comparison",
+            config={
+                "experiments": [s["name"] for s in summaries],
+                "total_episodes": total_episodes,
+            },
+        )
+    except Exception as e:
+        logger.warning(f"wandb init failed: {e}. Skipping comparison logging.")
+        return
+
+    try:
+        # Build comparison table
+        columns = ["Metric"] + [s["name"] for s in summaries]
+        metric_keys = [
+            ("Final capture rate", "final_capture_rate"),
+            ("Peak capture rate", "peak_capture_rate"),
+            ("Final win rate", "final_win_rate"),
+            ("Peak win rate", "peak_win_rate"),
+            ("Final pred Elo", "final_predator_elo"),
+            ("Final prey Elo", "final_prey_elo"),
+            ("Elapsed (s)", "elapsed_seconds"),
+        ]
+
+        rows = []
+        for label, key in metric_keys:
+            row = [label]
+            for s in summaries:
+                val = s.get(key)
+                row.append(round(val, 4) if isinstance(val, float) else (val or "N/A"))
+            rows.append(row)
+
+        table = wandb.Table(columns=columns, data=rows)
+        wandb.log({"comparison/summary_table": table})
+
+        # Log the text report
+        wandb.log({"comparison/report_text": wandb.Html(
+            f"<pre>{report}</pre>"
+        )})
+
+        # Upload comparison plot as artifact
+        if plot_path.exists():
+            artifact = wandb.Artifact(
+                name="comparison_plots",
+                type="plots",
+                description="Training curve comparison across experiments",
+            )
+            artifact.add_file(str(plot_path))
+            wandb.log_artifact(artifact)
+
+        logger.info("Comparison results logged to wandb.")
+    finally:
+        wandb.finish()
+
+
+def _get_episode_override() -> int | None:
+    """Check environment for episode count override.
+
+    Supports TOTAL_EPISODES env var for quick smoke-test runs.
+    """
+    val = os.environ.get("TOTAL_EPISODES")
+    if val is not None:
+        try:
+            return int(val)
+        except ValueError:
+            logger.warning(f"Invalid TOTAL_EPISODES={val}, using config default.")
+    return None
+
+
+def _can_use_wandb() -> bool:
+    """Check whether wandb is installed AND authenticated.
+
+    Returns False if wandb is not installed, not logged in, or the API key
+    is missing — so the pipeline degrades gracefully.
+    """
+    if not WANDB_AVAILABLE:
+        return False
+    try:
+        _ = wandb.Api()
+        return True
+    except Exception:
+        logger.warning(
+            "wandb is installed but not authenticated. "
+            "Run `wandb login` or set WANDB_API_KEY. Continuing without wandb."
+        )
+        return False
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
+    # Support env var override for quick pipeline tests
+    total_episodes = _get_episode_override()
+    if total_episodes is not None:
+        logger.info(
+            "TOTAL_EPISODES=%d (overriding config default %d)",
+            total_episodes, config.TOTAL_EPISODES,
+        )
+
+    # Enable wandb for the pipeline whenever it's available AND authenticated.
+    # Save/restore config so individual experiment scripts keep their default.
+    use_wandb = _can_use_wandb()
+    _original_use_wandb = config.USE_WANDB
+    if use_wandb:
+        config.USE_WANDB = True
+
     logger.info("Starting full experiment suite (%d experiments)", len(EXPERIMENTS))
 
     summaries = []
     for i, exp in enumerate(EXPERIMENTS, 1):
         logger.info(f"\nExperiment {i}/{len(EXPERIMENTS)}: {exp['name']}")
-        summary = run_experiment(exp)
+        summary = run_experiment(exp, total_episodes=total_episodes)
         summaries.append(summary)
+
+    # Restore original wandb setting (each Trainer manages its own lifecycle)
+    config.USE_WANDB = _original_use_wandb
 
     # Generate comparison report
     report = generate_comparison_report(summaries)
@@ -352,10 +492,21 @@ def main() -> None:
     print("\n" + report)
 
     # Generate plots if matplotlib is available
+    plot_path = Path("results") / "comparison_plots.png"
     try:
         generate_comparison_plots(summaries)
     except Exception as e:
         logger.warning(f"Could not generate comparison plots: {e}")
+
+    # Log comparison results to a standalone wandb run (no nesting conflicts)
+    if use_wandb:
+        try:
+            _log_comparison_to_wandb(
+                summaries, report, plot_path,
+                total_episodes=total_episodes or config.TOTAL_EPISODES,
+            )
+        except Exception as e:
+            logger.warning(f"Could not log comparison to wandb: {e}")
 
     logger.info("All experiments complete!")
 

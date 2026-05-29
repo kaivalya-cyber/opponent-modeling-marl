@@ -1,0 +1,77 @@
+{
+  "experiment_name": "baseline_ppo",
+  "is_om": false,
+  "git_commit": "e257f59f83c9940fa7cc1b49c0684296b8eef3c9",
+  "git_branch": "main",
+  "timestamp": "2026-05-29T18:29:01.499865+00:00",
+  "config": {
+    "ACTION_DIM": 5,
+    "CHECKPOINT_INTERVAL": 500,
+    "CLIP_EPSILON": 0.2,
+    "CURRICULUM_ENABLED": false,
+    "CURRICULUM_SCHEDULE": [
+      [
+        0,
+        5,
+        100
+      ],
+      [
+        500,
+        7,
+        150
+      ],
+      [
+        1000,
+        10,
+        200
+      ]
+    ],
+    "DEVICE": "mps",
+    "ENTROPY_COEFF": 0.01,
+    "EVAL_EPISODES": 20,
+    "EVAL_INTERVAL": 50,
+    "GAE_LAMBDA": 0.95,
+    "GAMMA": 0.99,
+    "GRAD_CLIP_NORM": 0.5,
+    "GRID_SIZE": 10,
+    "LEARNING_RATE": 0.0003,
+    "MAX_STEPS": 200,
+    "MINIBATCH_SIZE": 64,
+    "N_EPOCHS": 4,
+    "OBS_DIM": 29,
+    "OM_DROPOUT": 0.1,
+    "OM_HIDDEN_DIM": 64,
+    "OM_INPUT_DIM": 34,
+    "OM_LOSS_WEIGHT": 0.5,
+    "OM_LOSS_WEIGHT_DECAY": 0.9995,
+    "OM_MODEL_TYPE": "gru",
+    "OM_NUM_LAYERS": 2,
+    "PAST_SELF_EVAL": true,
+    "PAST_SELF_EVAL_EPISODES": 20,
+    "ROLLOUT_STEPS": 2048,
+    "SNAPSHOT_INTERVAL": 500,
+    "TF_DIM_FEEDFORWARD": 128,
+    "TF_MAX_SEQ_LEN": 64,
+    "TF_NUM_HEADS": 4,
+    "TF_NUM_LAYERS": 2,
+    "TOTAL_EPISODES": 2000,
+    "TOURNAMENT_MATCHES": 200,
+    "USE_WANDB": false,
+    "VALUE_LOSS_COEFF": 0.5,
+    "WANDB_PROJECT": "opponent-modeling-marl"
+  },
+  "hardware": {
+    "hostname": "mac.esuhsd.org",
+    "os": "macOS-26.5-arm64-arm-64bit-Mach-O",
+    "python_version": "3.13.9",
+    "torch_version": "2.11.0",
+    "device": "mps",
+    "cuda_available": false,
+    "mps_available": true,
+    "cpu_count": 4
+  },
+  "model_info": {
+    "predator_policy_params": 20997,
+    "predator_value_params": 20481
+  }
+}

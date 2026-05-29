@@ -1,0 +1,4 @@
+episode,predator_reward,prey_reward,capture_rate,predator_elo,prey_elo,policy_loss,value_loss,entropy,om_loss,om_loss_weight,grid_size
+0,0.82,-0.82,1.0,1016.0,984.0,0.0,0.0,0.0,0.0,0.49975,5
+1,0.88,-0.88,1.0,1030.53,969.47,0.0,0.0,0.0,0.0,0.4995,5
+2,-1.0,1.0,0.6667,1027.75,972.25,0.0,0.0,0.0,0.0,0.49925,5
