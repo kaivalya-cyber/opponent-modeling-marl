@@ -16,13 +16,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import matplotlib
-matplotlib.use("Agg")  # Non-interactive backend
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.stats import mannwhitneyu
 
-# Style
 plt.rcParams.update({
     "figure.facecolor": "white",
     "axes.facecolor": "#f8f9fa",
@@ -60,7 +59,6 @@ def load_eval_metrics(experiment_name: str) -> pd.DataFrame | None:
 
 
 def smooth(values: np.ndarray, window: int = 20) -> np.ndarray:
-    """Simple moving average for smoother plots."""
     if len(values) < window:
         return values
     kernel = np.ones(window) / window
@@ -71,29 +69,21 @@ def plot_capture_rate(
     ax, baseline: pd.DataFrame, om: pd.DataFrame,
     curriculum: pd.DataFrame | None = None,
 ) -> None:
-    """Capture rate over episodes."""
     ax.plot(
         smooth(baseline["capture_rate"].values),
         label="Baseline PPO",
-        alpha=0.85,
-        color=COLORS["baseline"],
-        linewidth=2,
+        alpha=0.85, color=COLORS["baseline"], linewidth=2,
     )
     ax.plot(
         smooth(om["capture_rate"].values),
         label="OM Agent",
-        alpha=0.85,
-        color=COLORS["om"],
-        linewidth=2,
+        alpha=0.85, color=COLORS["om"], linewidth=2,
     )
     if curriculum is not None and len(curriculum) > 0:
         ax.plot(
             smooth(curriculum["capture_rate"].values),
             label="OM + Curriculum",
-            alpha=0.85,
-            color=COLORS["curriculum"],
-            linewidth=2,
-            linestyle="--",
+            alpha=0.85, color=COLORS["curriculum"], linewidth=2, linestyle="--",
         )
     ax.set_xlabel("Episode")
     ax.set_ylabel("Capture Rate (rolling 20)")
@@ -106,45 +96,31 @@ def plot_elo(
     ax, baseline: pd.DataFrame, om: pd.DataFrame,
     curriculum: pd.DataFrame | None = None,
 ) -> None:
-    """Elo ratings over episodes."""
     ax.plot(
         baseline["predator_elo"].values,
         label="Baseline Predator",
-        alpha=0.85,
-        color=COLORS["baseline"],
-        linewidth=2,
+        alpha=0.85, color=COLORS["baseline"], linewidth=2,
     )
     ax.plot(
         om["predator_elo"].values,
         label="OM Predator",
-        alpha=0.85,
-        color=COLORS["om"],
-        linewidth=2,
+        alpha=0.85, color=COLORS["om"], linewidth=2,
     )
     if curriculum is not None and len(curriculum) > 0:
         ax.plot(
             curriculum["predator_elo"].values,
             label="Curriculum Predator",
-            alpha=0.85,
-            color=COLORS["curriculum"],
-            linewidth=2,
-            linestyle="--",
+            alpha=0.85, color=COLORS["curriculum"], linewidth=2, linestyle="--",
         )
     ax.plot(
         baseline["prey_elo"].values,
         label="Baseline Prey",
-        alpha=0.4,
-        color=COLORS["baseline"],
-        linestyle="--",
-        linewidth=1.5,
+        alpha=0.4, color=COLORS["baseline"], linestyle="--", linewidth=1.5,
     )
     ax.plot(
         om["prey_elo"].values,
         label="OM Prey",
-        alpha=0.4,
-        color=COLORS["om"],
-        linestyle="--",
-        linewidth=1.5,
+        alpha=0.4, color=COLORS["om"], linestyle="--", linewidth=1.5,
     )
     ax.set_xlabel("Episode")
     ax.set_ylabel("Elo Rating")
@@ -153,16 +129,10 @@ def plot_elo(
 
 
 def plot_om_loss(ax, om: pd.DataFrame) -> None:
-    """Opponent model loss (OM only)."""
     if "om_loss" in om.columns:
         om_loss_vals = om["om_loss"].dropna().values
         if len(om_loss_vals) > 20:
-            ax.plot(
-                smooth(om_loss_vals),
-                color=COLORS["om"],
-                alpha=0.85,
-                linewidth=2,
-            )
+            ax.plot(smooth(om_loss_vals), color=COLORS["om"], alpha=0.85, linewidth=2)
         else:
             ax.plot(om_loss_vals, color=COLORS["om"], alpha=0.85, linewidth=2)
         ax.set_xlabel("Episode")
@@ -170,38 +140,25 @@ def plot_om_loss(ax, om: pd.DataFrame) -> None:
         ax.set_title("Opponent Model Loss Over Training", fontweight="bold")
         ax.set_ylim(bottom=0)
     else:
-        ax.text(
-            0.5, 0.5, "No OM loss data", ha="center", va="center",
-            transform=ax.transAxes, fontsize=14, color="gray",
-        )
+        ax.text(0.5, 0.5, "No OM loss data", ha="center", va="center",
+                transform=ax.transAxes, fontsize=14, color="gray")
         ax.set_title("Opponent Model Loss", fontweight="bold")
 
 
 def plot_eval_metrics(
     ax, bl_eval: pd.DataFrame | None, om_eval: pd.DataFrame | None,
 ) -> None:
-    """Evaluation win rate vs random opponent."""
     if bl_eval is not None and "win_rate_vs_random" in bl_eval.columns:
         ax.plot(
-            bl_eval["episode"].values,
-            bl_eval["win_rate_vs_random"].values,
-            label="Baseline PPO",
-            alpha=0.85,
-            color=COLORS["baseline"],
-            linewidth=2,
-            marker="o",
-            markersize=3,
+            bl_eval["episode"].values, bl_eval["win_rate_vs_random"].values,
+            label="Baseline PPO", alpha=0.85, color=COLORS["baseline"],
+            linewidth=2, marker="o", markersize=3,
         )
     if om_eval is not None and "win_rate_vs_random" in om_eval.columns:
         ax.plot(
-            om_eval["episode"].values,
-            om_eval["win_rate_vs_random"].values,
-            label="OM Agent",
-            alpha=0.85,
-            color=COLORS["om"],
-            linewidth=2,
-            marker="o",
-            markersize=3,
+            om_eval["episode"].values, om_eval["win_rate_vs_random"].values,
+            label="OM Agent", alpha=0.85, color=COLORS["om"],
+            linewidth=2, marker="o", markersize=3,
         )
     ax.set_xlabel("Episode")
     ax.set_ylabel("Win Rate vs Random")
@@ -213,34 +170,23 @@ def plot_eval_metrics(
 def plot_past_self_eval(
     ax, bl_eval: pd.DataFrame | None, om_eval: pd.DataFrame | None,
 ) -> None:
-    """Past-self evaluation win rate."""
     has_data = False
     if bl_eval is not None and "win_rate_vs_past_self" in bl_eval.columns:
         mask = bl_eval["win_rate_vs_past_self"].notna()
         if mask.any():
             ax.plot(
-                bl_eval["episode"].values[mask],
-                bl_eval["win_rate_vs_past_self"].values[mask],
-                label="Baseline PPO",
-                alpha=0.85,
-                color=COLORS["baseline"],
-                linewidth=2,
-                marker="s",
-                markersize=4,
+                bl_eval["episode"].values[mask], bl_eval["win_rate_vs_past_self"].values[mask],
+                label="Baseline PPO", alpha=0.85, color=COLORS["baseline"],
+                linewidth=2, marker="s", markersize=4,
             )
             has_data = True
     if om_eval is not None and "win_rate_vs_past_self" in om_eval.columns:
         mask = om_eval["win_rate_vs_past_self"].notna()
         if mask.any():
             ax.plot(
-                om_eval["episode"].values[mask],
-                om_eval["win_rate_vs_past_self"].values[mask],
-                label="OM Agent",
-                alpha=0.85,
-                color=COLORS["om"],
-                linewidth=2,
-                marker="s",
-                markersize=4,
+                om_eval["episode"].values[mask], om_eval["win_rate_vs_past_self"].values[mask],
+                label="OM Agent", alpha=0.85, color=COLORS["om"],
+                linewidth=2, marker="s", markersize=4,
             )
             has_data = True
     if has_data:
@@ -251,17 +197,12 @@ def plot_past_self_eval(
         ax.legend(frameon=True, facecolor="white", edgecolor="#dee2e6")
         ax.set_ylim(0, 1.05)
     else:
-        ax.text(
-            0.5, 0.5, "No past-self data", ha="center", va="center",
-            transform=ax.transAxes, fontsize=14, color="gray",
-        )
+        ax.text(0.5, 0.5, "No past-self data", ha="center", va="center",
+                transform=ax.transAxes, fontsize=14, color="gray")
         ax.set_title("Past-Self Evaluation", fontweight="bold")
 
 
-def plot_loss_curves(
-    axes, baseline: pd.DataFrame, om: pd.DataFrame,
-) -> None:
-    """Policy loss, value loss, and entropy over training."""
+def plot_loss_curves(axes, baseline: pd.DataFrame, om: pd.DataFrame) -> None:
     metrics = [
         ("policy_loss", "Policy Loss"),
         ("value_loss", "Value Loss"),
@@ -272,25 +213,13 @@ def plot_loss_curves(
         if col in baseline.columns:
             vals = baseline[col].values
             if len(vals) > 20:
-                ax.plot(
-                    smooth(vals),
-                    color=COLORS["baseline"],
-                    alpha=0.7,
-                    linewidth=1.5,
-                    label="Baseline",
-                )
+                ax.plot(smooth(vals), color=COLORS["baseline"], alpha=0.7, linewidth=1.5, label="Baseline")
             else:
                 ax.plot(vals, color=COLORS["baseline"], alpha=0.7, linewidth=1.5, label="Baseline")
         if col in om.columns:
             vals = om[col].values
             if len(vals) > 20:
-                ax.plot(
-                    smooth(vals),
-                    color=COLORS["om"],
-                    alpha=0.7,
-                    linewidth=1.5,
-                    label="OM",
-                )
+                ax.plot(smooth(vals), color=COLORS["om"], alpha=0.7, linewidth=1.5, label="OM")
             else:
                 ax.plot(vals, color=COLORS["om"], alpha=0.7, linewidth=1.5, label="OM")
         ax.set_xlabel("Episode")
@@ -300,31 +229,36 @@ def plot_loss_curves(
 
 
 def plot_om_weight_decay(ax, om: pd.DataFrame) -> None:
-    """OM loss weight decay over episodes."""
     if "om_loss_weight" in om.columns:
         vals = om["om_loss_weight"].dropna().values
-        ax.plot(
-            vals,
-            color=COLORS["om"],
-            alpha=0.85,
-            linewidth=2,
-        )
+        ax.plot(vals, color=COLORS["om"], alpha=0.85, linewidth=2)
         ax.set_xlabel("Episode")
         ax.set_ylabel("OM Loss Weight")
         ax.set_title("OM Loss Weight Decay", fontweight="bold")
     else:
-        ax.text(
-            0.5, 0.5, "No weight data", ha="center", va="center",
-            transform=ax.transAxes, fontsize=14, color="gray",
-        )
+        ax.text(0.5, 0.5, "No weight data", ha="center", va="center",
+                transform=ax.transAxes, fontsize=14, color="gray")
         ax.set_title("OM Loss Weight Decay", fontweight="bold")
+
+
+def plot_learning_rate(ax, om: pd.DataFrame) -> None:
+    """Plot LR scheduler behavior if logged."""
+    if "learning_rate" in om.columns:
+        vals = om["learning_rate"].dropna().values
+        ax.plot(vals, color=COLORS["om"], alpha=0.85, linewidth=2)
+        ax.set_xlabel("Episode")
+        ax.set_ylabel("Learning Rate")
+        ax.set_title("Learning Rate Schedule", fontweight="bold")
+    else:
+        ax.text(0.5, 0.5, "No LR data", ha="center", va="center",
+                transform=ax.transAxes, fontsize=14, color="gray")
+        ax.set_title("Learning Rate Schedule", fontweight="bold")
 
 
 def plot_head_to_head(
     ax, baseline: pd.DataFrame, om: pd.DataFrame,
     curriculum: pd.DataFrame | None = None,
 ) -> None:
-    """Bar chart comparing final metrics across all experiments."""
     last_n = min(100, len(baseline))
     bl_cap = baseline["capture_rate"].iloc[-last_n:].mean() * 100
     om_cap = om["capture_rate"].iloc[-last_n:].mean() * 100
@@ -344,7 +278,7 @@ def plot_head_to_head(
         cap_vals.append(cur_cap)
         elo_vals.append(cur_elo)
 
-    x = np.arange(2)  # Two metric groups
+    x = np.arange(2)
     n_bars = len(labels_list)
     width = 0.8 / n_bars
 
@@ -359,17 +293,13 @@ def plot_head_to_head(
             color=color, edgecolor="white", linewidth=0.8,
         )
         for bar in bars_cap:
-            ax.text(
-                bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
-                f"{bar.get_height():.1f}", ha="center", va="bottom",
-                fontsize=9, fontweight="bold",
-            )
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
+                    f"{bar.get_height():.1f}", ha="center", va="bottom",
+                    fontsize=9, fontweight="bold")
         for bar in bars_elo:
-            ax.text(
-                bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
-                f"{bar.get_height():.1f}", ha="center", va="bottom",
-                fontsize=9, fontweight="bold",
-            )
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
+                    f"{bar.get_height():.1f}", ha="center", va="bottom",
+                    fontsize=9, fontweight="bold")
 
     ax.set_xticks(x)
     ax.set_xticklabels(["Capture Rate %\n(last 100 ep)", "Final Elo\n(predator)"])
@@ -381,7 +311,6 @@ def plot_head_to_head(
 def _make_summary_row(
     metric: str, bl_val, om_val, cur_val=None, fmt_spec: str = ".2f",
 ) -> str:
-    """Format a single row of the summary table."""
     def fmt(v):
         if v is None:
             return "—".rjust(14)
@@ -395,14 +324,109 @@ def _make_summary_row(
     return cols
 
 
+def plot_icm_losses(ax, om: pd.DataFrame) -> None:
+    """Plot ICM forward and inverse losses if logged."""
+    if "icm_fwd_loss" in om.columns:
+        vals = om["icm_fwd_loss"].dropna().values
+        if len(vals) > 0:
+            ax.plot(vals, label="ICM Forward", alpha=0.85, linewidth=1.5, color=COLORS["om"])
+            ax.set_xlabel("Episode")
+            ax.set_ylabel("ICM Loss")
+            ax.set_title("ICM Losses", fontweight="bold")
+            ax.legend(frameon=True, facecolor="white", edgecolor="#dee2e6", fontsize=9)
+    if "icm_inv_loss" in om.columns:
+        vals = om["icm_inv_loss"].dropna().values
+        if len(vals) > 0:
+            ax.plot(vals, label="ICM Inverse", alpha=0.85, linewidth=1.5, color=COLORS["curriculum"])
+            ax.legend()
+    if "icm_fwd_loss" not in om.columns and "icm_inv_loss" not in om.columns:
+        ax.text(0.5, 0.5, "No ICM data", ha="center", va="center",
+                transform=ax.transAxes, fontsize=14, color="gray")
+        ax.set_title("ICM Losses", fontweight="bold")
+
+
+def plot_approx_kl(ax, om: pd.DataFrame) -> None:
+    """Plot approximate KL divergence if logged."""
+    if "approx_kl" in om.columns:
+        vals = om["approx_kl"].dropna().values
+        if len(vals) > 0:
+            ax.plot(vals, color=COLORS["om"], alpha=0.85, linewidth=1.5)
+            ax.set_xlabel("Episode")
+            ax.set_ylabel("Approx KL")
+            ax.set_title("Approx KL Divergence", fontweight="bold")
+    else:
+        ax.text(0.5, 0.5, "No KL data", ha="center", va="center",
+                transform=ax.transAxes, fontsize=14, color="gray")
+        ax.set_title("Approx KL Divergence", fontweight="bold")
+
+
+def plot_explained_variance(ax, om: pd.DataFrame) -> None:
+    """Plot explained variance if logged."""
+    if "explained_variance" in om.columns:
+        vals = om["explained_variance"].dropna().values
+        if len(vals) > 0:
+            ax.plot(vals, color=COLORS["om"], alpha=0.85, linewidth=1.5)
+            ax.set_xlabel("Episode")
+            ax.set_ylabel("Explained Variance")
+            ax.set_title("Explained Variance", fontweight="bold")
+    else:
+        ax.text(0.5, 0.5, "No explained variance data", ha="center", va="center",
+                transform=ax.transAxes, fontsize=14, color="gray")
+        ax.set_title("Explained Variance", fontweight="bold")
+
+
+def plot_om_accuracy(ax, om: pd.DataFrame) -> None:
+    """Plot OM accuracy if logged."""
+    if "om_accuracy" in om.columns:
+        vals = om["om_accuracy"].dropna().values
+        if len(vals) > 0:
+            ax.plot(vals, color=COLORS["om"], alpha=0.85, linewidth=1.5)
+            ax.set_xlabel("Episode")
+            ax.set_ylabel("OM Accuracy")
+            ax.set_title("Opponent Model Accuracy", fontweight="bold")
+            ax.set_ylim(0, 1.05)
+    else:
+        ax.text(0.5, 0.5, "No OM accuracy data", ha="center", va="center",
+                transform=ax.transAxes, fontsize=14, color="gray")
+        ax.set_title("Opponent Model Accuracy", fontweight="bold")
+
+
+def plot_entropy_coeff(ax, om: pd.DataFrame) -> None:
+    """Plot scheduled entropy coefficient if logged."""
+    if "entropy_coeff" in om.columns:
+        vals = om["entropy_coeff"].dropna().values
+        if len(vals) > 0:
+            ax.plot(vals, color=COLORS["om"], alpha=0.85, linewidth=1.5)
+            ax.set_xlabel("Episode")
+            ax.set_ylabel("Entropy Coefficient")
+            ax.set_title("Entropy Schedule", fontweight="bold")
+    else:
+        ax.text(0.5, 0.5, "No entropy coeff data", ha="center", va="center",
+                transform=ax.transAxes, fontsize=14, color="gray")
+        ax.set_title("Entropy Schedule", fontweight="bold")
+
+
+def plot_steps_per_sec(ax, om: pd.DataFrame) -> None:
+    """Plot training speed if logged."""
+    if "steps_per_sec" in om.columns:
+        vals = om["steps_per_sec"].dropna().values
+        if len(vals) > 0:
+            ax.plot(vals, color=COLORS["om"], alpha=0.85, linewidth=1.5)
+            ax.set_xlabel("Episode")
+            ax.set_ylabel("Steps/sec")
+            ax.set_title("Training Speed", fontweight="bold")
+    else:
+        ax.text(0.5, 0.5, "No speed data", ha="center", va="center",
+                transform=ax.transAxes, fontsize=14, color="gray")
+        ax.set_title("Training Speed", fontweight="bold")
+
+
 def main() -> None:
-    # Load data
     baseline = load_metrics("baseline_ppo")
     om = load_metrics("om_agent")
     bl_eval = load_eval_metrics("baseline_ppo")
     om_eval = load_eval_metrics("om_agent")
 
-    # Try loading curriculum data (may not exist)
     curriculum = None
     cur_eval = None
     try:
@@ -411,37 +435,57 @@ def main() -> None:
     except FileNotFoundError:
         print("(Curriculum data not found — skipping in plots)")
 
-    # ---- Figure 1: Main comparison (capture rate, Elo, eval metrics) ----
-    fig, axes = plt.subplots(2, 3, figsize=(20, 11))
+    # ---- Figure 1: Main comparison (8 panels) ----
+    fig, axes = plt.subplots(2, 4, figsize=(24, 11))
     plot_capture_rate(axes[0, 0], baseline, om, curriculum)
     plot_elo(axes[0, 1], baseline, om, curriculum)
     plot_om_loss(axes[0, 2], om)
+    plot_learning_rate(axes[0, 3], om)
     plot_eval_metrics(axes[1, 0], bl_eval, om_eval)
     plot_past_self_eval(axes[1, 1], bl_eval, om_eval)
     plot_om_weight_decay(axes[1, 2], om)
+    plot_icm_losses(axes[1, 3], om)
 
     plt.tight_layout(pad=3)
     plot_path = RESULTS_DIR / "comparison_plots.png"
     plt.savefig(plot_path, dpi=150, bbox_inches="tight")
-    print(f"[1/3] Main comparison plots → {plot_path}")
+    print(f"[1/4] Main comparison plots → {plot_path}")
     plt.close()
 
-    # ---- Figure 2: Loss curves ----
+    # ---- Figure 2: New metrics (KL, explained variance, OM accuracy, entropy, speed) ----
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    plot_approx_kl(axes[0, 0], om)
+    plot_explained_variance(axes[0, 1], om)
+    plot_om_accuracy(axes[0, 2], om)
+    plot_entropy_coeff(axes[1, 0], om)
+    plot_steps_per_sec(axes[1, 1], om)
+    # bottom-right: additional curves or empty
+    axes[1, 2].text(0.5, 0.5, "Expanded Metrics", ha="center", va="center",
+                    transform=axes[1, 2].transAxes, fontsize=14, color="gray")
+    axes[1, 2].set_title("Additional Metrics", fontweight="bold")
+
+    plt.tight_layout(pad=3)
+    plot_path = RESULTS_DIR / "expanded_metrics.png"
+    plt.savefig(plot_path, dpi=150, bbox_inches="tight")
+    print(f"[2/4] Expanded metrics → {plot_path}")
+    plt.close()
+
+    # ---- Figure 3: Loss curves ----
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     plot_loss_curves(axes, baseline, om)
     plt.tight_layout(pad=3)
     plot_path = RESULTS_DIR / "loss_curves.png"
     plt.savefig(plot_path, dpi=150, bbox_inches="tight")
-    print(f"[2/3] Loss curves → {plot_path}")
+    print(f"[3/4] Loss curves → {plot_path}")
     plt.close()
 
-    # ---- Figure 3: Head-to-head summary ----
+    # ---- Figure 4: Head-to-head summary ----
     fig, ax = plt.subplots(figsize=(8, 5))
     plot_head_to_head(ax, baseline, om, curriculum)
     plt.tight_layout(pad=2)
     plot_path = RESULTS_DIR / "head_to_head.png"
     plt.savefig(plot_path, dpi=150, bbox_inches="tight")
-    print(f"[3/3] Head-to-head summary → {plot_path}")
+    print(f"[4/4] Head-to-head summary → {plot_path}")
     plt.close()
 
     # ---- Summary Table ----
@@ -476,7 +520,7 @@ def main() -> None:
     header_cols = f"{'Metric':<26s} | {'Baseline PPO':>14s} | {'OM Agent':>14s}"
     sep_line = "-" * len(header_cols)
     if has_curriculum:
-        header_cols += " | {'OM+Curriculum':>14s}"
+        header_cols += f" | {'OM+Curriculum':>14s}"
         sep_line = "-" * len(header_cols)
 
     print()
@@ -494,7 +538,6 @@ def main() -> None:
     for metric, bl_v, om_v, cur_v, fmt_s in rows:
         print(_make_summary_row(metric, bl_v, om_v, cur_v, fmt_s))
 
-    # OM loss
     if "om_loss" in om.columns:
         om_final_loss = om["om_loss"].dropna().iloc[-1] if len(om["om_loss"].dropna()) > 0 else float("nan")
         cur_final_loss = None
@@ -502,11 +545,8 @@ def main() -> None:
             cur_vals = curriculum["om_loss"].dropna()
             if len(cur_vals) > 0:
                 cur_final_loss = cur_vals.iloc[-1]
-        print(_make_summary_row(
-            "Final OM loss", "—", om_final_loss, cur_final_loss, ".4f",
-        ))
+        print(_make_summary_row("Final OM loss", "—", om_final_loss, cur_final_loss, ".4f"))
 
-    # Past-self eval
     if om_eval is not None and "win_rate_vs_past_self" in om_eval.columns:
         past_vals = om_eval["win_rate_vs_past_self"].dropna()
         cur_past = None
@@ -515,13 +555,10 @@ def main() -> None:
             if len(cur_past_vals) > 0:
                 cur_past = cur_past_vals.iloc[-1]
         om_past_val = past_vals.iloc[-1] if len(past_vals) > 0 else None
-        print(_make_summary_row(
-            "Past-self win rate", "—", om_past_val, cur_past, ".2f",
-        ))
+        print(_make_summary_row("Past-self win rate", "—", om_past_val, cur_past, ".2f"))
 
     print("=" * len(header_cols))
 
-    # ---- Statistical Test ----
     stat, p_value = mannwhitneyu(om_last, bl_last, alternative="greater")
     print(f"\nMann-Whitney U test — p-value: {p_value:.6f}")
     if p_value < 0.05:

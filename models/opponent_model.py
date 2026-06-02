@@ -17,6 +17,7 @@ and reset at episode start. This is critical — do not reset h mid-episode.
 
 from __future__ import annotations
 
+import copy
 import math
 
 import torch
@@ -58,16 +59,6 @@ class OpponentModel(nn.Module):
     def forward(
         self, x_seq: torch.Tensor, h: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Forward pass through GRU + linear head.
-
-        Args:
-            x_seq: (batch, seq_len, input_dim)
-            h: (num_layers, batch, hidden_dim) or None for zero init
-
-        Returns:
-            logits: (batch, action_dim) — logits from the *last* time-step
-            new_h:  (num_layers, batch, hidden_dim)
-        """
         assert x_seq.ndim == 3, f"Expected 3D input, got shape {x_seq.shape}"
         batch_size = x_seq.size(0)
 
@@ -77,10 +68,9 @@ class OpponentModel(nn.Module):
             )
 
         gru_out, new_h = self.gru(x_seq, h)
-        # Use the output from the last time-step and apply layer norm
-        last_out = gru_out[:, -1, :]  # (batch, hidden_dim)
+        last_out = gru_out[:, -1, :]
         last_out = self.layer_norm(last_out)
-        logits = self.fc(last_out)  # (batch, action_dim)
+        logits = self.fc(last_out)
 
         assert logits.shape == (batch_size, self.action_dim), (
             f"Logits shape mismatch: {logits.shape}"
@@ -92,28 +82,26 @@ class OpponentModel(nn.Module):
 
     def predict_opponent_action(
         self, x_seq: torch.Tensor, h: torch.Tensor | None = None
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Predict opponent action probabilities (softmax of logits).
-
-        Args:
-            x_seq: (batch, seq_len, input_dim)
-            h: optional hidden state
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        """Predict opponent action probabilities.
 
         Returns:
-            action_probs: (batch, action_dim) — probability distribution
+            action_probs: (batch, action_dim)
             new_h: (num_layers, batch, hidden_dim)
+            confidence: None (kept for API compatibility with ensemble)
         """
         logits, new_h = self.forward(x_seq, h)
         action_probs = F.softmax(logits, dim=-1)
-        return action_probs, new_h
+        return action_probs, new_h, None
+
+    def get_confidence(self, logits: torch.Tensor) -> torch.Tensor:
+        """Return confidence (max softmax probability) for each item in batch."""
+        probs = F.softmax(logits, dim=-1)
+        return probs.max(dim=-1).values
 
 
 class TransformerOpponentModel(nn.Module):
-    """Transformer-based opponent model with causal self-attention.
-
-    Uses a learned positional encoding and a causal mask so the model
-    can only attend to past timesteps when predicting the next action.
-    """
+    """Transformer-based opponent model with causal self-attention."""
 
     def __init__(
         self,
@@ -131,16 +119,13 @@ class TransformerOpponentModel(nn.Module):
         self.action_dim = action_dim
         self.max_seq_len = max_seq_len
 
-        # Project input to hidden_dim
         self.input_proj = nn.Linear(input_dim, hidden_dim)
 
-        # Learned positional encoding
         self.pos_encoding = nn.Parameter(
             torch.zeros(1, max_seq_len, hidden_dim)
         )
         nn.init.normal_(self.pos_encoding, mean=0.0, std=0.02)
 
-        # Transformer encoder layers
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=hidden_dim,
             nhead=num_heads,
@@ -155,7 +140,6 @@ class TransformerOpponentModel(nn.Module):
         self.layer_norm = nn.LayerNorm(hidden_dim)
         self.fc = nn.Linear(hidden_dim, action_dim)
 
-        # Causal mask (upper triangular, so position i can only attend to j <= i)
         self.register_buffer(
             "causal_mask",
             torch.triu(
@@ -164,42 +148,27 @@ class TransformerOpponentModel(nn.Module):
         )
 
     def _generate_square_subsequent_mask(self, sz: int) -> torch.Tensor:
-        """Return causal mask of shape (sz, sz)."""
         return self.causal_mask[:sz, :sz]
 
     def forward(
         self, x_seq: torch.Tensor, h: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Forward pass through Transformer.
-
-        Args:
-            x_seq: (batch, seq_len, input_dim)
-            h: ignored (Transformer has no recurrent state; use reset_sequence instead)
-
-        Returns:
-            logits: (batch, action_dim) — logits from the last time-step
-            new_h: dummy torch.Tensor (unused, placeholder for API compatibility)
-        """
         assert x_seq.ndim == 3, f"Expected 3D input, got shape {x_seq.shape}"
         batch_size, seq_len, _ = x_seq.shape
         assert seq_len <= self.max_seq_len, (
             f"Sequence length {seq_len} exceeds max {self.max_seq_len}"
         )
 
-        # Project input and add positional encoding
-        x = self.input_proj(x_seq)  # (B, seq_len, hidden_dim)
+        x = self.input_proj(x_seq)
         x = x + self.pos_encoding[:, :seq_len, :]
 
-        # Causal mask
         causal_mask = self._generate_square_subsequent_mask(seq_len).to(x.device)
 
-        # Transformer
-        out = self.transformer(x, mask=causal_mask)  # (B, seq_len, hidden_dim)
-        last_out = out[:, -1, :]  # (B, hidden_dim)
+        out = self.transformer(x, mask=causal_mask)
+        last_out = out[:, -1, :]
         last_out = self.layer_norm(last_out)
-        logits = self.fc(last_out)  # (B, action_dim)
+        logits = self.fc(last_out)
 
-        # Return dummy hidden state for API compatibility with GRU interface
         dummy_h = torch.zeros(1, batch_size, self.hidden_dim, device=x_seq.device)
 
         assert logits.shape == (batch_size, self.action_dim), (
@@ -209,20 +178,110 @@ class TransformerOpponentModel(nn.Module):
 
     def predict_opponent_action(
         self, x_seq: torch.Tensor, h: torch.Tensor | None = None
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Predict opponent action probabilities (softmax of logits).
-
-        Args:
-            x_seq: (batch, seq_len, input_dim)
-            h: ignored for Transformer (maintained for API compatibility)
-
-        Returns:
-            action_probs: (batch, action_dim) — probability distribution
-            new_h: dummy tensor (unused)
-        """
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         logits, dummy_h = self.forward(x_seq, h)
         action_probs = F.softmax(logits, dim=-1)
-        return action_probs, dummy_h
+        return action_probs, dummy_h, None
+
+    def get_confidence(self, logits: torch.Tensor) -> torch.Tensor:
+        probs = F.softmax(logits, dim=-1)
+        return probs.max(dim=-1).values
+
+
+class EnsembleOpponentModel(nn.Module):
+    """Ensemble of opponent models for more robust predictions.
+
+    Aggregates predictions from multiple models via mean or majority voting.
+    """
+
+    def __init__(
+        self,
+        input_dim: int = 34,
+        hidden_dim: int = 64,
+        action_dim: int = 5,
+        model_type: str = "gru",
+        ensemble_size: int = 3,
+        vote: str = "mean",
+    ) -> None:
+        super().__init__()
+        self.ensemble_size = ensemble_size
+        self.action_dim = action_dim
+        self.vote = vote
+        self.hidden_dim = hidden_dim
+
+        self.models = nn.ModuleList([
+            build_opponent_model(
+                input_dim=input_dim,
+                hidden_dim=hidden_dim,
+                action_dim=action_dim,
+                model_type=model_type,
+            )
+            for _ in range(ensemble_size)
+        ])
+
+    def forward(
+        self, x_seq: torch.Tensor, h: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        all_logits = []
+        all_h = []
+        for model in self.models:
+            logits, new_h = model(x_seq, h)
+            all_logits.append(logits.unsqueeze(0))
+            all_h.append(new_h.unsqueeze(0))
+
+        logits = torch.mean(torch.cat(all_logits, dim=0), dim=0)
+        new_h = torch.mean(torch.cat(all_h, dim=0), dim=0)
+        return logits, new_h
+
+    def predict_opponent_action(
+        self, x_seq: torch.Tensor, h: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        if self.vote == "mean":
+            all_probs = []
+            all_h = []
+            for model in self.models:
+                probs, new_h, _ = model.predict_opponent_action(x_seq, h)
+                all_probs.append(probs.unsqueeze(0))
+                all_h.append(new_h.unsqueeze(0))
+
+            probs = torch.mean(torch.cat(all_probs, dim=0), dim=0)
+            new_h = torch.mean(torch.cat(all_h, dim=0), dim=0)
+
+            # Confidence = mean of individual model confidences
+            confidences = [p.max(dim=-1).values for p in all_probs]
+            confidence = torch.mean(torch.stack(confidences, dim=0), dim=0)
+
+            return probs, new_h, confidence
+
+        elif self.vote == "majority":
+            # Each model produces a distribution; majority vote over argmax
+            all_probs = []
+            all_h = []
+            all_actions = []
+            for model in self.models:
+                probs, new_h, _ = model.predict_opponent_action(x_seq, h)
+                all_probs.append(probs.unsqueeze(0))
+                all_h.append(new_h.unsqueeze(0))
+                all_actions.append(probs.argmax(dim=-1).unsqueeze(0))
+
+            # Majority vote
+            all_actions_t = torch.cat(all_actions, dim=0)  # (ens, B)
+            batch_size = all_actions_t.size(1)
+            probs = torch.zeros(batch_size, self.action_dim, device=x_seq.device)
+
+            for b in range(batch_size):
+                votes = all_actions_t[:, b]
+                counts = torch.bincount(votes, minlength=self.action_dim)
+                winner = counts.argmax()
+                probs[b, winner] = 1.0
+
+            new_h = torch.mean(torch.cat(all_h, dim=0), dim=0)
+            confidence = probs.max(dim=-1).values
+            return probs, new_h, confidence
+
+    def get_confidence(self, logits: torch.Tensor) -> torch.Tensor:
+        probs = F.softmax(logits, dim=-1)
+        return probs.max(dim=-1).values
 
 
 def build_opponent_model(
@@ -231,17 +290,16 @@ def build_opponent_model(
     action_dim: int = 5,
     model_type: str = "gru",
 ) -> nn.Module:
-    """Factory function to build the selected opponent model variant.
+    if config.OM_ENSEMBLE_SIZE > 1:
+        return EnsembleOpponentModel(
+            input_dim=input_dim,
+            hidden_dim=hidden_dim,
+            action_dim=action_dim,
+            model_type=model_type,
+            ensemble_size=config.OM_ENSEMBLE_SIZE,
+            vote=config.OM_ENSEMBLE_VOTE,
+        )
 
-    Args:
-        input_dim: Dimension of input features per timestep.
-        hidden_dim: Hidden dimension for GRU / Transformer.
-        action_dim: Number of opponent actions.
-        model_type: "gru" or "transformer".
-
-    Returns:
-        An OpponentModel or TransformerOpponentModel instance.
-    """
     if model_type == "gru":
         return OpponentModel(
             input_dim=input_dim,
@@ -266,3 +324,9 @@ def build_opponent_model(
             f"Unknown opponent model type: {model_type}. "
             f"Valid options: 'gru', 'transformer'"
         )
+
+
+def soft_update_target(target: nn.Module, source: nn.Module, tau: float) -> None:
+    """Polyak averaging: target = tau * source + (1 - tau) * target."""
+    for target_param, param in zip(target.parameters(), source.parameters()):
+        target_param.data.copy_(tau * param.data + (1.0 - tau) * target_param.data)
