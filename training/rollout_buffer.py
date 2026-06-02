@@ -16,7 +16,6 @@ class RolloutBuffer:
         self.action_dim = action_dim
         self.capacity = capacity
 
-        # Pre-allocate storage
         self.obs = np.zeros((capacity, obs_dim), dtype=np.float32)
         self.actions = np.zeros(capacity, dtype=np.int64)
         self.rewards = np.zeros(capacity, dtype=np.float32)
@@ -25,7 +24,9 @@ class RolloutBuffer:
         self.dones = np.zeros(capacity, dtype=np.bool_)
         self.opp_actions = np.zeros(capacity, dtype=np.int64)
 
-        # Computed after rollout
+        # --- NEW: Store next_obs for N-step returns ---
+        self.next_obs = np.zeros((capacity, obs_dim), dtype=np.float32)
+
         self.advantages: np.ndarray | None = None
         self.returns: np.ndarray | None = None
 
@@ -48,8 +49,8 @@ class RolloutBuffer:
         log_prob: torch.Tensor,
         done: bool,
         opp_action: int,
+        **kwargs,
     ) -> None:
-        """Store a single transition."""
         assert self._ptr < self.capacity, "Buffer overflow"
         self.obs[self._ptr] = obs
         self.actions[self._ptr] = action
@@ -58,6 +59,10 @@ class RolloutBuffer:
         self.log_probs[self._ptr] = log_prob.detach().cpu().item()
         self.dones[self._ptr] = done
         self.opp_actions[self._ptr] = opp_action
+
+        # Store next_obs for N-step returns (if provided)
+        if "next_obs" in kwargs:
+            self.next_obs[self._ptr] = kwargs["next_obs"]
         self._ptr += 1
 
     def compute_returns(
@@ -108,10 +113,10 @@ class RolloutBuffer:
                 "returns": torch.tensor(self.returns[idx], dtype=torch.float32).to(config.DEVICE),
                 "values": torch.tensor(self.values[idx], dtype=torch.float32).to(config.DEVICE),
                 "opp_actions": torch.tensor(self.opp_actions[idx], dtype=torch.long).to(config.DEVICE),
+                "rewards": torch.tensor(self.rewards[idx], dtype=torch.float32).to(config.DEVICE),
             }
 
     def reset(self) -> None:
-        """Clear the buffer for next rollout."""
         self._ptr = 0
         self.advantages = None
         self.returns = None

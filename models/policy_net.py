@@ -6,11 +6,16 @@ Output: logits over action_dim (5)
 Architecture:
   Linear(input_dim, 128) -> ReLU -> Linear(128, 128) -> ReLU -> Linear(128, action_dim)
 
-Returns raw logits (NOT softmax). Distributions handle probabilities.
+Optional LayerNorm after each hidden layer (config.POLICY_USE_LAYERNORM).
 """
+
+import math
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
+import config
 
 
 class PolicyNet(nn.Module):
@@ -18,25 +23,37 @@ class PolicyNet(nn.Module):
 
     def __init__(self, input_dim: int = 29, action_dim: int = 5) -> None:
         super().__init__()
-        self.net = nn.Sequential(
+        self.action_dim = action_dim
+
+        layers = [
             nn.Linear(input_dim, 128),
             nn.ReLU(),
+        ]
+        if config.POLICY_USE_LAYERNORM:
+            layers.append(nn.LayerNorm(128))
+
+        layers.extend([
             nn.Linear(128, 128),
             nn.ReLU(),
-            nn.Linear(128, action_dim),
-        )
+        ])
+        if config.POLICY_USE_LAYERNORM:
+            layers.append(nn.LayerNorm(128))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass.
+        layers.append(nn.Linear(128, action_dim))
 
-        Args:
-            x: (batch, input_dim)
+        self.net = nn.Sequential(*layers)
+        self._init_weights()
 
-        Returns:
-            logits: (batch, action_dim) — raw logits, no softmax.
-        """
+    def _init_weights(self) -> None:
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.orthogonal_(m.weight, gain=math.sqrt(2))
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0.0)
+
+    def forward(self, x: torch.Tensor, temperature: float | None = None) -> torch.Tensor:
+        temp = temperature if temperature is not None else config.SOFTMAX_TEMPERATURE
         logits = self.net(x)
-        assert logits.shape[-1] == self.net[-1].out_features, (
-            f"Logits last dim mismatch: {logits.shape}"
-        )
+        if temp != 1.0:
+            logits = logits / temp
         return logits

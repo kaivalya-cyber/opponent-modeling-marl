@@ -32,7 +32,7 @@ import time
 from pathlib import Path
 
 import matplotlib
-matplotlib.use("Agg")  # Non-interactive backend
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -42,7 +42,6 @@ from agents.ppo_agent import PPOAgent
 from agents.om_agent import OMAgent
 from training.trainer import Trainer
 
-# Optional wandb import
 try:
     import wandb
     WANDB_AVAILABLE = True
@@ -51,10 +50,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Experiment definitions
-# ---------------------------------------------------------------------------
 
 EXPERIMENTS = [
     {
@@ -83,17 +78,10 @@ EXPERIMENTS = [
 # ---------------------------------------------------------------------------
 
 def run_experiment(exp: dict, total_episodes: int | None = None) -> dict:
-    """Run a single experiment and return summary stats.
-
-    Args:
-        exp: Experiment dict with name, description, is_om, curriculum keys.
-        total_episodes: Override config.TOTAL_EPISODES (for quick test runs).
-    """
     name = exp["name"]
     is_om = exp["is_om"]
     episodes = total_episodes if total_episodes is not None else config.TOTAL_EPISODES
 
-    # Set curriculum config
     config.CURRICULUM_ENABLED = exp["curriculum"]
 
     logger.info("=" * 60)
@@ -123,14 +111,12 @@ def run_experiment(exp: dict, total_episodes: int | None = None) -> dict:
 
     elapsed = time.time() - start_time
 
-    # Collect summary metrics
     summary = _collect_summary(trainer.results_dir, name, elapsed)
     logger.info(f"Completed {name} in {elapsed:.0f}s")
     return summary
 
 
 def _collect_summary(results_dir: Path, name: str, elapsed: float) -> dict:
-    """Extract summary stats from the experiment results."""
     csv_path = results_dir / "metrics.csv"
     eval_path = results_dir / "eval_metrics.csv"
 
@@ -171,7 +157,6 @@ def _collect_summary(results_dir: Path, name: str, elapsed: float) -> dict:
 # ---------------------------------------------------------------------------
 
 def generate_comparison_report(summaries: list[dict]) -> str:
-    """Generate a human-readable comparison report."""
     lines = []
     sep = "=" * 80
 
@@ -181,13 +166,11 @@ def generate_comparison_report(summaries: list[dict]) -> str:
     lines.append(f"Experiments run: {len(summaries)}")
     lines.append("")
 
-    # Helper: format value or return dash if missing/non-numeric
     def fmt_val(v, fmt_spec: str) -> str:
         if isinstance(v, (int, float)):
             return format(v, fmt_spec)
         return "-"
 
-    # Summary table
     headers = ["Metric", *(s["name"] for s in summaries)]
     rows = [
         ("Total time", *(fmt_val(s.get("elapsed_seconds"), ".0f") + "s" if isinstance(s.get("elapsed_seconds"), (int, float)) else "-" for s in summaries)),
@@ -239,9 +222,8 @@ def generate_comparison_report(summaries: list[dict]) -> str:
               for s in summaries),
         ))
 
-    # Calculate column widths
     col_widths = [max(len(str(row[i])) for row in rows) for i in range(len(headers))]
-    col_widths[0] = max(col_widths[0], 22)  # Min width for metric names
+    col_widths[0] = max(col_widths[0], 22)
 
     def fmt_row(cells):
         return " | ".join(str(c).ljust(w) for c, w in zip(cells, col_widths))
@@ -255,11 +237,9 @@ def generate_comparison_report(summaries: list[dict]) -> str:
     lines.append(sep)
     lines.append("")
 
-    # Analysis insights
     lines.append("INSIGHTS")
     lines.append("-" * 80)
 
-    # Compare OM vs baseline
     om_summary = next((s for s in summaries if s["name"] == "om_agent"), None)
     bl_summary = next((s for s in summaries if s["name"] == "baseline_ppo"), None)
 
@@ -273,7 +253,6 @@ def generate_comparison_report(summaries: list[dict]) -> str:
             f"({om_win:.4f} vs {bl_win:.4f})"
         )
 
-    # Compare curriculum vs regular OM
     curr_summary = next((s for s in summaries if s["name"] == "om_curriculum"), None)
     if om_summary and curr_summary:
         om_win = om_summary.get("final_win_rate", 0)
@@ -293,7 +272,6 @@ def generate_comparison_report(summaries: list[dict]) -> str:
 
 
 def generate_comparison_plots(summaries: list[dict]) -> None:
-    """Generate comparison plots from all experiment CSVs."""
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     fig.suptitle("Experiment Comparison", fontsize=14, fontweight="bold")
 
@@ -356,12 +334,6 @@ def generate_comparison_plots(summaries: list[dict]) -> None:
 def _log_comparison_to_wandb(
     summaries: list[dict], report: str, plot_path: Path, total_episodes: int
 ) -> None:
-    """Log comparison results to a standalone wandb run.
-
-    Each experiment's Trainer manages its own wandb lifecycle independently.
-    This function starts a fresh, isolated run solely for the cross-experiment
-    comparison summary — no nesting, no conflicts.
-    """
     if not WANDB_AVAILABLE:
         return
 
@@ -379,7 +351,6 @@ def _log_comparison_to_wandb(
         return
 
     try:
-        # Build comparison table
         columns = ["Metric"] + [s["name"] for s in summaries]
         metric_keys = [
             ("Final capture rate", "final_capture_rate"),
@@ -401,13 +372,8 @@ def _log_comparison_to_wandb(
 
         table = wandb.Table(columns=columns, data=rows)
         wandb.log({"comparison/summary_table": table})
+        wandb.log({"comparison/report_text": wandb.Html(f"<pre>{report}</pre>")})
 
-        # Log the text report
-        wandb.log({"comparison/report_text": wandb.Html(
-            f"<pre>{report}</pre>"
-        )})
-
-        # Upload comparison plot as artifact
         if plot_path.exists():
             artifact = wandb.Artifact(
                 name="comparison_plots",
@@ -423,10 +389,6 @@ def _log_comparison_to_wandb(
 
 
 def _get_episode_override(args: argparse.Namespace) -> int | None:
-    """Resolve episode count override from CLI args then env var.
-
-    Priority: --episodes > --quick > TOTAL_EPISODES env var > config default.
-    """
     if args.episodes is not None:
         return args.episodes
     if args.quick:
@@ -441,11 +403,6 @@ def _get_episode_override(args: argparse.Namespace) -> int | None:
 
 
 def _can_use_wandb() -> bool:
-    """Check whether wandb is installed AND authenticated.
-
-    Returns False if wandb is not installed, not logged in, or the API key
-    is missing — so the pipeline degrades gracefully.
-    """
     if not WANDB_AVAILABLE:
         return False
     try:
@@ -460,14 +417,12 @@ def _can_use_wandb() -> bool:
 
 
 def _parse_args() -> argparse.Namespace:
-    """Parse command-line arguments for the experiment pipeline."""
     parser = argparse.ArgumentParser(
         description="Run all three experiment configurations and compare results.",
     )
     parser.add_argument(
         "--quick", action="store_true",
-        help="Run a quick smoke test (5 episodes per experiment; note: may "
-             "not trigger PPO updates due to ROLLOUT_STEPS requirement).",
+        help="Run a quick smoke test (5 episodes per experiment).",
     )
     parser.add_argument(
         "--episodes", type=int, default=None, metavar="N",
@@ -488,7 +443,6 @@ def main() -> None:
 
     args = _parse_args()
 
-    # Resolve episode count from CLI args / env var / config default
     total_episodes = _get_episode_override(args)
     if total_episodes is not None:
         logger.info(
@@ -496,9 +450,6 @@ def main() -> None:
             total_episodes, config.TOTAL_EPISODES,
         )
 
-    # Enable wandb for the pipeline whenever it's available AND authenticated.
-    # --no-wandb flag explicitly disables it.
-    # Save/restore config so individual experiment scripts keep their default.
     use_wandb = _can_use_wandb() and not args.no_wandb
     _original_use_wandb = config.USE_WANDB
     if use_wandb:
@@ -512,27 +463,22 @@ def main() -> None:
         summary = run_experiment(exp, total_episodes=total_episodes)
         summaries.append(summary)
 
-    # Restore original wandb setting (each Trainer manages its own lifecycle)
     config.USE_WANDB = _original_use_wandb
 
-    # Generate comparison report
     report = generate_comparison_report(summaries)
     report_path = Path("results") / "comparison_report.txt"
     with open(report_path, "w") as f:
         f.write(report)
     logger.info(f"Comparison report saved: {report_path}")
 
-    # Print to console
     print("\n" + report)
 
-    # Generate plots if matplotlib is available
     plot_path = Path("results") / "comparison_plots.png"
     try:
         generate_comparison_plots(summaries)
     except Exception as e:
         logger.warning(f"Could not generate comparison plots: {e}")
 
-    # Log comparison results to a standalone wandb run (no nesting conflicts)
     if use_wandb:
         try:
             _log_comparison_to_wandb(

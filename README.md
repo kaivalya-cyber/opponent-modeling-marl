@@ -32,14 +32,14 @@ opponent-modeling-marl/
 │   ├── trainer.py           #   Self-play training loop + evaluation
 │   ├── rollout_buffer.py    #   GAE advantage computation
 │   └── elo.py               #   Elo rating system
-├── tests/                   # Test suite (38 tests)
+├── tests/                   # Test suite (73 tests)
 │   ├── test_agents.py
 │   ├── test_env.py
 │   ├── test_models.py
 │   ├── test_training.py
 │   └── test_integration.py
 ├── results/                 # Experiment outputs (metrics, checkpoints, analysis)
-│   └── analysis.py          #   Visualization & statistical analysis
+│   └── analysis.py          #   Visualization & statistical analysis (4 figures)
 ├── config.py                # All hyperparameters
 ├── sweep.yaml               # Wandb hyperparameter sweep configuration
 ├── Dockerfile               # CUDA-enabled Docker image
@@ -100,10 +100,11 @@ opponent-modeling-marl/
                          │        ▼             ▼            ▼        │
                          │  ┌─────────────────────────────────────┐   │
                          │  │          analysis.py                  │   │
-                         │  │  • comparison_plots.png (6-panel)     │   │
-                         │  │  • loss_curves.png                    │   │
-                         │  │  • head_to_head.png                   │   │
-                         │  │  • Statistical tests                   │   │
+                          │  │  • comparison_plots.png (8-panel)     │   │
+                          │  │  • expanded_metrics.png               │   │
+                          │  │  • loss_curves.png                    │   │
+                          │  │  • head_to_head.png                   │   │
+                          │  │  • Statistical tests (Mann-Whitney)    │   │
                          │  └─────────────────────────────────────┘   │
                          └────────────────────────────────────────────┘
 ```
@@ -231,9 +232,24 @@ Training metrics are logged to `results/<experiment>/metrics.csv` and evaluation
 | `capture_rate` | `metrics.csv` | Rolling average (20 episodes) of predator captures |
 | `predator_elo` / `prey_elo` | `metrics.csv` | Elo ratings from self-play outcomes |
 | `policy_loss` / `value_loss` | `metrics.csv` | PPO clip loss and value function MSE |
+| `entropy` | `metrics.csv` | Policy entropy |
 | `om_loss` | `metrics.csv` | Cross-entropy loss for opponent action prediction (OM only) |
+| `om_loss_weight` | `metrics.csv` | OM auxiliary loss weight with exponential decay |
+| `om_accuracy` | `metrics.csv` | Rolling opponent prediction accuracy (OM only) |
+| `approx_kl` | `metrics.csv` | Approximate KL divergence (PPO update) |
+| `explained_variance` | `metrics.csv` | Value function explained variance |
+| `learning_rate` | `metrics.csv` | Scheduled learning rate (if LR scheduler enabled) |
+| `entropy_coeff` | `metrics.csv` | Scheduled entropy coefficient (if entropy schedule enabled) |
+| `icm_fwd_loss` / `icm_inv_loss` | `metrics.csv` | Intrinsic Curiosity Module losses |
+| `param_noise_std` | `metrics.csv` | Parameter noise standard deviation |
+| `predator_streak` / `prey_streak` | `metrics.csv` | Consecutive win/loss streaks |
+| `best_capture_rate` | `metrics.csv` | Best capture rate seen so far |
+| `steps_per_sec` | `metrics.csv` | Training speed in environment steps per second |
+| `eta_seconds` | `metrics.csv` | Estimated time remaining |
+| `pred_ep_len` / `pred_ep_reward` | `metrics.csv` | Most recent episode length / reward |
 | `win_rate_vs_random` | `eval_metrics.csv` | Deterministic evaluation against random opponent |
 | `win_rate_vs_past_self` | `eval_metrics.csv` | Evaluation against frozen historical snapshot |
+| `win_rate_ci` | `eval_metrics.csv` | Confidence interval for win rate |
 
 ### Generating Visualizations
 
@@ -243,11 +259,12 @@ After running experiments, generate publication-quality plots:
 python results/analysis.py
 ```
 
-This produces three visualizations:
+This produces four visualizations:
 
 | Output | Description |
 |---|---|
-| `results/comparison_plots.png` | **6-panel overview**: capture rate, Elo ratings, OM loss, win rate vs random, past-self eval, OM weight decay |
+| `results/comparison_plots.png` | **8-panel overview**: capture rate, Elo ratings, OM loss, learning rate, eval win rate, past-self eval, OM weight decay, ICM losses |
+| `results/expanded_metrics.png` | **5-panel**: approx KL, explained variance, OM accuracy, entropy schedule, training speed |
 | `results/loss_curves.png` | **Loss analysis**: policy loss, value loss, and entropy across experiments |
 | `results/head_to_head.png` | **Bar chart**: final capture rate and Elo comparison (includes curriculum when available) |
 
@@ -260,7 +277,9 @@ This produces three visualizations:
 | `results/comparison_report.txt` | Human-readable summary with metric table and insights |
 | `results/comparison_plots.png` | 4-panel training curves (capture rate, Elo, win rate, past-self) |
 
-All plots use 150 DPI, publication-friendly styling, and consistent color schemes across experiments (blue=baseline, red=OM, green=curriculum).
+### Config Reports
+
+Each run saves `run_metadata.json` with git commit hash, full config snapshot, hardware info, and model parameter counts. When `LOG_CONFIG_DIFF=True`, config values that differ from defaults are printed at training start.
 
 ## Hyperparameter Sweeps
 
@@ -277,10 +296,81 @@ Or run locally without wandb:
 python -m experiments.sweep
 ```
 
+## 50+ Advanced Features
+
+The codebase includes a comprehensive set of configurable features beyond core PPO+OM:
+
+### Training Stability
+- **Separate Optimizers** — independent `policy_optimizer` / `value_optimizer` with different LRs & weight decay
+- **Layer Normalization** — optional LayerNorm on policy/value network hidden layers
+- **Value Residual Clip** — clamp value function updates to prevent divergence
+- **Gradient Accumulation** — accumulate gradients over N mini-batches before stepping
+- **Gradient Clipping** — separate clip norms for actor and critic
+- **Policy Weight Decay** / **Value Weight Decay** — L2 regularization per network
+- **Softmax Temperature** — scale policy logits for exploration control
+- **Orthogonal Weight Init** — orthogonal initialization for policy/value networks
+
+### Exploration & Regularization
+- **Scheduled Entropy** — linearly anneal entropy bonus from target to near-zero
+- **Scheduled Clip Epsilon** — linearly anneal PPO clip range
+- **Parameter Noise** — Gaussian noise on policy parameters with decay
+- **Action Noise** — random action injection during training
+- **Intrinsic Curiosity Module (ICM)** — forward + inverse dynamics bonus rewards
+
+### Opponent Modeling Enhancements
+- **Focal Loss** — focus OM on hard-to-predict opponent actions
+- **Label Smoothing** — prevent OM overconfidence
+- **Surprise-Based Update** — skip OM update when loss is below threshold
+- **Ensemble OM** — majority-vote ensemble of K opponent models
+- **MC Dropout Uncertainty** — Monte Carlo dropout for OM confidence
+- **Accuracy Tracking** — rolling window of OM prediction accuracy
+- **Weight Ramp-Up** — gradually increase OM loss weight over N episodes
+
+### Inference & Evaluation
+- **Model EMA** — exponential moving average of policy weights for stable eval
+- **EMA Action Selection** — optional EMA-based inference
+- **Deterministic Eval** — choose stochastic or deterministic eval actions
+- **Eval Confidence Intervals** — z-score-based CI for win rates
+- **Past-Self Eval** — pit current agent against frozen historical snapshots
+- **Random Opponent Eval** — periodic evaluation vs random prey
+- **Best Episode Tracking** — best capture rate, reward, and streak tracking
+
+### Training Infrastructure
+- **Curriculum Learning** — progressive grid sizes (5→7→10) with scheduled stages
+- **Checkpoint Manager** — keep top-K checkpoints by metric
+- **Early Stopping** — stop when capture rate stays below threshold for N episodes
+- **Frame Stacking** — stack N consecutive observations as state
+- **Observation Normalization** — running mean/std normalization
+- **Reward Normalization + Scaling** — running reward normalization with `REWARD_SCALE`
+- **Action Repeat** — repeat same action for N steps
+- **Time-Limit Bootstrap** — handle truncated episodes for value estimation
+
+### Experiment Tracking
+- **TensorBoard** — full metrics logging to TensorBoard
+- **Weights & Biases** — configurable wandb logging
+- **CSV Logging** — per-episode metrics + eval metrics
+- **JSON Export** — periodic metrics snapshot in JSON
+- **Config Diff** — log changed config values at start
+- **Run Metadata** — git hash, hardware, model params saved per run
+- **Speed / ETA** — real-time steps/sec and ETA logging
+- **Profile Mode** — aggregate speed and performance stats
+
+### Environment
+- **Stochastic Environments** — configurable random obstacles + partial observation
+- **Partial Observability** — configurable observation radius
+- **Obstacle Density** — tune obstacle count
+
+### Results & Analysis
+- **4 Publication-Quality Figures** — 8-panel comparison, expanded metrics, loss curves, head-to-head
+- **Statistical Tests** — Mann-Whitney U significance test
+- **Summary Table** — final metrics for all experiments
+
+Enable/disable any feature in `config.py` — all are off by default except core PPO+OM settings.
+
 ## CI/CD
 
 On every push and PR, GitHub Actions:
-- Runs all 38 tests across Python 3.10–3.12
+- Runs all 73 tests across Python 3.10–3.12
 - Lints with ruff
 - Builds and pushes Docker images to GitHub Container Registry on version tags (`v*`)
 
